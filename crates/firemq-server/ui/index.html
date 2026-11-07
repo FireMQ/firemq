@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FireMQ</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23f05a28' d='M16 2c2 6 9 9 9 17a9 9 0 0 1-18 0c0-4 2-7 4-9 0 3 1 5 3 6 0-6 0-10 2-14z'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #fbfaf8; --panel: #ffffff; --text: #1d1b19; --muted: #6b6560; --line: #e7e2dc;
+  --accent: #e8501e; --accent-soft: #fdebe3; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030;
+  --code: #f4f1ed; --shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151311; --panel: #1e1b18; --text: #f1ece6; --muted: #a39b93; --line: #34302b;
+    --accent: #ff7a45; --accent-soft: #3a2218; --code: #26221e; --shadow: none; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; }
+.brand svg { width: 22px; height: 22px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav a { padding: 6px 10px; border-radius: 6px; color: var(--muted); }
+nav a.active, nav a:hover { background: var(--accent-soft); color: var(--accent); }
+.spacer { flex: 1; }
+main { padding: 20px; max-width: 1280px; margin: 0 auto; }
+h2 { font-size: 18px; margin: 4px 0 14px; }
+h3 { font-size: 14px; margin: 18px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow); }
+.card .v { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.card .k { color: var(--muted); font-size: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow-x: auto; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: var(--code); color: var(--muted); margin-right: 4px; }
+.tag.ok { color: var(--ok); } .tag.bad { color: var(--bad); }
+form.inline, .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; padding: 12px; }
+label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+textarea { width: 100%; min-height: 80px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+button.secondary { background: transparent; color: var(--accent); }
+button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
+pre { background: var(--code); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; margin: 0; white-space: pre-wrap; word-break: break-all; }
+.muted { color: var(--muted); }
+.empty { padding: 16px; color: var(--muted); }
+.toast { position: fixed; bottom: 16px; right: 16px; background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 8px; max-width: 420px; opacity: 0; transition: opacity .2s; }
+.toast.show { opacity: 1; }
+.login { max-width: 340px; margin: 12vh auto; }
+.login .panel { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.alarm { background: #fde8e8; color: var(--bad); border: 1px solid #f5c2c2; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
+@media (max-width: 640px) { main { padding: 12px; } th, td { padding: 6px 8px; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast"></div>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const enc = encodeURIComponent;
+const fmt = (n) => (n ?? 0).toLocaleString();
+const rate = (d) => (d && d.rate ? d.rate.toFixed(1) : "0.0") + "/s";
+const bytes = (n) => { n = n || 0; const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return n.toFixed(i ? 1 : 0) + " " + u[i]; };
+const LOGO = '<svg viewBox="0 0 32 32"><path fill="currentColor" style="color:var(--accent)" d="M16 2c2 6 9 9 9 17a9 9 0 0 1-18 0c0-4 2-7 4-9 0 3 1 5 3 6 0-6 0-10 2-14z"/></svg>';
+
+let auth = sessionStorage.getItem("firemq.auth");
+let vhost = sessionStorage.getItem("firemq.vhost") || "/";
+let timer = null;
+let gen = 0; // bumped on every navigation; stale draws check it and bail out
+
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+async function api(method, path, body) {
+  const r = await fetch("/api" + path, {
+    method, headers: { Authorization: "Basic " + auth, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (r.status === 401) { logout(); throw new Error("Please log in"); }
+  const text = await r.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!r.ok) throw new Error((data && data.reason) || r.statusText);
+  return data;
+}
+
+function logout() { sessionStorage.removeItem("firemq.auth"); auth = null; render(); }
+
+function loginView() {
+  $("#app").innerHTML = `<div class="login"><div class="brand" style="justify-content:center;margin-bottom:16px">${LOGO} FireMQ</div>
+    <form class="panel" id="login"><label>Username<input name="u" value="guest" autocomplete="username"></label>
+    <label>Password<input name="p" type="password" value="" autocomplete="current-password"></label>
+    <button>Log in</button><div class="muted" id="err"></div></form></div>`;
+  $("#login").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target; auth = btoa(f.u.value + ":" + f.p.value);
+    try { await api("GET", "/whoami"); sessionStorage.setItem("firemq.auth", auth); location.hash ||= "#/overview"; render(); }
+    catch (err) { auth = null; $("#err").textContent = err.message; }
+  };
+}
+
+const views = { overview, connections, queues, queue, exchanges, exchange, admin };
+
+async function render() {
+  clearInterval(timer);
+  const mine = ++gen;
+  if (!auth) return loginView();
+  const [name, ...args] = (location.hash.slice(2) || "overview").split("/").map(decodeURIComponent);
+  const view = views[name] || overview;
+  let vhosts = [];
+  try { vhosts = await api("GET", "/vhosts"); } catch (e) { return; }
+  if (mine !== gen) return;
+  if (!vhosts.some((v) => v.name === vhost)) vhost = vhosts[0]?.name || "/";
+  $("#app").innerHTML = `<header><div class="brand">${LOGO} FireMQ</div><nav>
+    ${["overview", "connections", "queues", "exchanges", "admin"].map((v) => `<a href="#/${v}" class="${v === name || (v + "s") === name || (name === "queue" && v === "queues") || (name === "exchange" && v === "exchanges") ? "active" : ""}">${v[0].toUpperCase() + v.slice(1)}</a>`).join("")}
+    </nav><div class="spacer"></div><label style="flex-direction:row;align-items:center;gap:6px">vhost
+    <select id="vh">${vhosts.map((v) => `<option ${v.name === vhost ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select></label>
+    <a id="logout">Log out</a></header><main id="main"></main>`;
+  delete $("#main").dataset.view;
+  $("#vh").onchange = (e) => { vhost = e.target.value; sessionStorage.setItem("firemq.vhost", vhost); render(); };
+  $("#logout").onclick = logout;
+  const draw = async () => { try { await view(...args); } catch (e) { toast(e.message); } };
+  await draw();
+  if (view !== admin) timer = setInterval(draw, 5000);
+}
+
+function table(cols, rows, empty = "Nothing here yet.") {
+  if (!rows.length) return `<div class="empty">${empty}</div>`;
+  return `<table><tr>${cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.h}</th>`).join("")}</tr>
+    ${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</table>`;
+}
+
+async function overview() {
+  const tok = gen;
+  const [o, nodes] = await Promise.all([api("GET", "/overview"), api("GET", "/nodes")]);
+  const n = nodes[0] || {}; const t = o.object_totals; const q = o.queue_totals; const m = o.message_stats;
+  const alarms = [n.mem_alarm && "memory", n.disk_free_alarm && "disk"].filter(Boolean);
+  if (tok !== gen) return;
+  $("#main").innerHTML = `${alarms.length ? `<div class="alarm">Resource alarm: ${alarms.join(", ")}. Publishers are paused.</div>` : ""}
+    <h2>${esc(o.node)} <span class="tag">FireMQ ${esc(o.product_version)}</span></h2>
+    <div class="cards">
+      ${[["Connections", t.connections], ["Channels", t.channels], ["Queues", t.queues], ["Consumers", t.consumers], ["Exchanges", t.exchanges],
+        ["Ready", q.messages_ready], ["Unacked", q.messages_unacknowledged]].map(([k, v]) => `<div class="card"><div class="v">${fmt(v)}</div><div class="k">${k}</div></div>`).join("")}
+    </div>
+    <div class="cards">
+      ${[["Publish", m.publish_details], ["Deliver", m.deliver_get_details], ["Ack", m.ack_details], ["Confirm", m.confirm_details]]
+        .map(([k, v]) => `<div class="card"><div class="v">${rate(v)}</div><div class="k">${k} rate</div></div>`).join("")}
+      <div class="card"><div class="v">${bytes(n.mem_used)}</div><div class="k">Memory of ${bytes(n.mem_limit)} limit</div></div>
+      <div class="card"><div class="v">${n.disk_free ? bytes(n.disk_free) : "n/a"}</div><div class="k">Disk free</div></div>
+    </div>
+    <h3>Listeners</h3><div class="panel">${table([{ h: "Protocol", f: (l) => esc(l.protocol) }, { h: "Address", f: (l) => esc(l.ip_address) }, { h: "Port", f: (l) => l.port, num: 1 }], o.listeners)}</div>`;
+}
+
+async function connections() {
+  const tok = gen;
+  const list = (await api("GET", "/connections")).filter((c) => c.vhost === vhost);
+  if (tok !== gen) return;
+  $("#main").innerHTML = `<h2>Connections</h2><div class="panel">${table([
+    { h: "Name", f: (c) => esc(c.name) }, { h: "User", f: (c) => esc(c.user) }, { h: "Protocol", f: (c) => esc(c.protocol) + (c.ssl ? ' <span class="tag ok">TLS</span>' : "") },
+    { h: "Client", f: (c) => esc(c.client_properties?.product || c.client_properties?.connection_name || "") },
+    { h: "Channels", f: (c) => c.channels, num: 1 }, { h: "In", f: (c) => rate(c.recv_oct_details).replace("/s", " B/s"), num: 1 },
+    { h: "Out", f: (c) => rate(c.send_oct_details).replace("/s", " B/s"), num: 1 },
+    { h: "", f: (c) => `<button class="danger" data-close="${esc(c.name)}">Close</button>` },
+  ], list, "No connections to this vhost.")}</div>`;
+  document.querySelectorAll("[data-close]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Close connection " + b.dataset.close + "?")) return;
+    await api("DELETE", "/connections/" + enc(b.dataset.close)); toast("Connection closed"); connections();
+  });
+}
+
+async function queues() {
+  const tok = gen;
+  const list = await api("GET", "/queues/" + enc(vhost));
+  if (tok !== gen) return;
+  $("#main").innerHTML = `<h2>Queues</h2><div class="panel">${table([
+    { h: "Name", f: (q) => `<a href="#/queue/${enc(q.name)}">${esc(q.name)}</a>` },
+    { h: "Features", f: (q) => [q.durable && "D", q.auto_delete && "AD", q.exclusive && "Excl", q.policy && "Policy: " + q.policy, ...Object.keys(q.arguments || {}).map((a) => a.replace(/^x-/, ""))].filter(Boolean).map((x) => `<span class="tag">${esc(x)}</span>`).join("") },
+    { h: "Ready", f: (q) => fmt(q.messages_ready), num: 1 }, { h: "Unacked", f: (q) => fmt(q.messages_unacknowledged), num: 1 },
+    { h: "Consumers", f: (q) => q.consumers, num: 1 },
+    { h: "In", f: (q) => rate(q.message_stats?.publish_details), num: 1 }, { h: "Out", f: (q) => rate(q.message_stats?.deliver_get_details), num: 1 },
+  ], list, "No queues yet. Declare one below or from a client.")}</div>
+  <h3>Add a queue</h3><div class="panel"><form class="inline" id="addq"><label>Name<input name="name" required></label>
+  <label>Durability<select name="durable"><option value="true">Durable</option><option value="false">Transient</option></select></label>
+  <label>Arguments (JSON)<input name="args" value="{}" size="30"></label><button>Add queue</button></form></div>`;
+  $("#addq").onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target;
+    try { await api("PUT", `/queues/${enc(vhost)}/${enc(f.name.value)}`, { durable: f.durable.value === "true", arguments: JSON.parse(f.args.value || "{}") }); toast("Queue added"); queues(); }
+    catch (err) { toast(err.message); }
+  };
+}
+
+function queueStats(q) {
+  return [["Ready", q.messages_ready], ["Unacked", q.messages_unacknowledged], ["Consumers", q.consumers], ["Published", q.message_stats.publish], ["Delivered", q.message_stats.deliver_get], ["Acked", q.message_stats.ack]]
+    .map(([k, v]) => `<div class="card"><div class="v">${fmt(v)}</div><div class="k">${k}</div></div>`).join("");
+}
+
+function queueConsumers(q) {
+  return table([{ h: "Tag", f: (c) => esc(c.consumer_tag) }, { h: "Connection", f: (c) => esc(c.channel_details.connection_name) }, { h: "Ack", f: (c) => c.ack_required ? "manual" : "auto" }, { h: "Prefetch", f: (c) => c.prefetch_count, num: 1 }, { h: "Active", f: (c) => c.active ? '<span class="tag ok">yes</span>' : "waiting" }], q.consumer_details || [], "No consumers.");
+}
+
+async function queue(name) {
+  const tok = gen;
+  const base = `/queues/${enc(vhost)}/${enc(name)}`;
+  if ($("#main").dataset.view === "queue:" + name) {
+    // Refresh only the live numbers, so forms and fetched messages stay put.
+    const q = await api("GET", base);
+    if (tok !== gen) return;
+    $("#qstats").innerHTML = queueStats(q);
+    $("#qconsumers").innerHTML = queueConsumers(q);
+    return;
+  }
+  const [q, binds] = await Promise.all([api("GET", base), api("GET", base + "/bindings")]);
+  if (tok !== gen) return;
+  $("#main").dataset.view = "queue:" + name;
+  $("#main").innerHTML = `<h2><a href="#/queues">Queues</a> / ${esc(q.name)}</h2>
+    <div class="cards" id="qstats">${queueStats(q)}</div>
+    <div class="panel"><pre>${esc(JSON.stringify({ durable: q.durable, auto_delete: q.auto_delete, exclusive: q.exclusive, arguments: q.arguments, policy: q.policy, effective_policy_definition: q.effective_policy_definition }, null, 2))}</pre></div>
+    <h3>Consumers</h3><div class="panel" id="qconsumers">${queueConsumers(q)}</div>
+    <h3>Bindings</h3><div class="panel">${table([{ h: "From exchange", f: (b) => b.source ? `<a href="#/exchange/${enc(b.source)}">${esc(b.source)}</a>` : '<span class="muted">(default)</span>' }, { h: "Routing key", f: (b) => esc(b.routing_key) }, { h: "Arguments", f: (b) => esc(JSON.stringify(b.arguments)) }], binds)}
+      <form class="inline" id="bind"><label>From exchange<input name="ex" required></label><label>Routing key<input name="key"></label><button>Bind</button></form></div>
+    <h3>Publish a message</h3><div class="panel"><form class="inline" id="pub" style="flex-direction:column;align-items:stretch">
+      <textarea name="body" placeholder="Message body"></textarea><div class="row" style="padding:0"><label>Content type<input name="ct" value="text/plain"></label>
+      <label>Persistent<select name="dm"><option value="2">Yes</option><option value="1">No</option></select></label><button>Publish to this queue</button></div></form></div>
+    <h3>Get messages</h3><div class="panel"><form class="inline" id="get"><label>Count<input name="count" type="number" value="1" min="1" style="width:80px"></label>
+      <label>Mode<select name="mode"><option value="ack_requeue_true">Peek (requeue)</option><option value="ack_requeue_false">Take (ack)</option><option value="reject_requeue_false">Reject (dead-letter)</option></select></label>
+      <button>Get messages</button></form><div id="msgs"></div></div>
+    <h3>Danger zone</h3><div class="row"><button class="danger" id="purge">Purge messages</button><button class="danger" id="del">Delete queue</button></div>`;
+  const redraw = () => { delete $("#main").dataset.view; queue(name); };
+  $("#bind").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { await api("POST", `/bindings/${enc(vhost)}/e/${enc(f.ex.value)}/q/${enc(name)}`, { routing_key: f.key.value, arguments: {} }); toast("Bound"); redraw(); } catch (err) { toast(err.message); } };
+  $("#pub").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { await api("POST", `/exchanges/${enc(vhost)}/amq.default/publish`, { routing_key: name, payload: f.body.value, payload_encoding: "string", properties: { content_type: f.ct.value, delivery_mode: +f.dm.value } }); toast("Published"); f.body.value = ""; } catch (err) { toast(err.message); } };
+  $("#get").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { const msgs = await api("POST", base + "/get", { count: +f.count.value, ackmode: f.mode.value, encoding: "auto", truncate: 50000 });
+      $("#msgs").innerHTML = msgs.length ? msgs.map((m, i) => `<div style="padding:0 12px 12px"><div class="muted">#${i + 1} · exchange ${esc(m.exchange || "(default)")} · key ${esc(m.routing_key)} · ${m.payload_bytes} bytes${m.redelivered ? " · redelivered" : ""}</div>
+        <pre>${esc(m.payload)}</pre><pre>${esc(JSON.stringify(m.properties, null, 2))}</pre></div>`).join("") : '<div class="empty">Queue is empty.</div>';
+    } catch (err) { toast(err.message); } };
+  $("#purge").onclick = async () => { if (confirm("Purge all ready messages?")) { await api("DELETE", base + "/contents"); toast("Purged"); redraw(); } };
+  $("#del").onclick = async () => { if (confirm("Delete queue " + name + "?")) { await api("DELETE", base); toast("Deleted"); location.hash = "#/queues"; } };
+}
+
+async function exchanges() {
+  const tok = gen;
+  const list = await api("GET", "/exchanges/" + enc(vhost));
+  if (tok !== gen) return;
+  $("#main").innerHTML = `<h2>Exchanges</h2><div class="panel">${table([
+    { h: "Name", f: (x) => `<a href="#/exchange/${enc(x.name || "amq.default")}">${x.name ? esc(x.name) : "(AMQP default)"}</a>` },
+    { h: "Type", f: (x) => esc(x.type) },
+    { h: "Features", f: (x) => [x.durable && "D", x.auto_delete && "AD", x.internal && "I", ...Object.keys(x.arguments || {})].filter(Boolean).map((a) => `<span class="tag">${esc(a)}</span>`).join("") },
+  ], list)}</div>
+  <h3>Add an exchange</h3><div class="panel"><form class="inline" id="addx"><label>Name<input name="name" required></label>
+  <label>Type<select name="type"><option>direct</option><option>fanout</option><option>topic</option><option>headers</option></select></label>
+  <label>Durability<select name="durable"><option value="true">Durable</option><option value="false">Transient</option></select></label><button>Add exchange</button></form></div>`;
+  $("#addx").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { await api("PUT", `/exchanges/${enc(vhost)}/${enc(f.name.value)}`, { type: f.type.value, durable: f.durable.value === "true" }); toast("Exchange added"); exchanges(); } catch (err) { toast(err.message); } };
+}
+
+async function exchange(name) {
+  const tok = gen;
+  const base = `/exchanges/${enc(vhost)}/${enc(name)}`;
+  if ($("#main").dataset.view === "x:" + name) return;
+  const [x, binds] = await Promise.all([api("GET", base), api("GET", base + "/bindings/source")]);
+  if (tok !== gen) return;
+  $("#main").dataset.view = "x:" + name;
+  const builtin = name === "amq.default" || name.startsWith("amq.");
+  $("#main").innerHTML = `<h2><a href="#/exchanges">Exchanges</a> / ${x.name ? esc(x.name) : "(AMQP default)"} <span class="tag">${esc(x.type)}</span></h2>
+    <h3>Bindings</h3><div class="panel">${table([{ h: "To", f: (b) => b.destination_type === "queue" ? `<a href="#/queue/${enc(b.destination)}">${esc(b.destination)}</a>` : `exchange <a href="#/exchange/${enc(b.destination)}">${esc(b.destination)}</a>` }, { h: "Routing key", f: (b) => esc(b.routing_key) }, { h: "Arguments", f: (b) => esc(JSON.stringify(b.arguments)) }], binds, "No bindings.")}</div>
+    <h3>Publish a message</h3><div class="panel"><form class="inline" id="pub" style="flex-direction:column;align-items:stretch">
+      <label>Routing key<input name="key"></label><textarea name="body" placeholder="Message body"></textarea>
+      <div class="row" style="padding:0"><label>Headers (JSON)<input name="headers" value="{}"></label><button>Publish</button></div></form></div>
+    ${builtin ? "" : `<div class="row"><button class="danger" id="del">Delete exchange</button></div>`}`;
+  $("#pub").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { const r = await api("POST", base + "/publish", { routing_key: f.key.value, payload: f.body.value, payload_encoding: "string", properties: { headers: JSON.parse(f.headers.value || "{}") } });
+      toast(r.routed ? "Published and routed" : "Published, but no queue matched"); } catch (err) { toast(err.message); } };
+  if (!builtin) $("#del").onclick = async () => { if (confirm("Delete exchange " + name + "?")) { await api("DELETE", base); location.hash = "#/exchanges"; } };
+}
+
+async function admin() {
+  const tok = gen;
+  const [users, vhosts, perms, policies] = await Promise.all([api("GET", "/users"), api("GET", "/vhosts"), api("GET", "/permissions"), api("GET", "/policies/" + enc(vhost))]);
+  if (tok !== gen) return;
+  $("#main").innerHTML = `<h2>Admin</h2>
+    <h3>Users</h3><div class="panel">${table([{ h: "Name", f: (u) => esc(u.name) }, { h: "Tags", f: (u) => u.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("") }, { h: "Access", f: (u) => perms.filter((p) => p.user === u.name).map((p) => esc(p.vhost)).join(", ") }, { h: "", f: (u) => `<button class="danger" data-deluser="${esc(u.name)}">Delete</button>` }], users)}
+      <form class="inline" id="adduser"><label>Name<input name="name" required></label><label>Password<input name="pw" type="password" required></label>
+      <label>Tags<select name="tags"><option value="">none</option><option>management</option><option>monitoring</option><option>policymaker</option><option>administrator</option></select></label>
+      <label>Grant full access to<select name="vh">${vhosts.map((v) => `<option>${esc(v.name)}</option>`).join("")}</select></label><button>Add user</button></form></div>
+    <h3>Virtual hosts</h3><div class="panel">${table([{ h: "Name", f: (v) => esc(v.name) }, { h: "Messages", f: (v) => fmt(v.messages), num: 1 }, { h: "", f: (v) => v.name === "/" ? "" : `<button class="danger" data-delvh="${esc(v.name)}">Delete</button>` }], vhosts)}
+      <form class="inline" id="addvh"><label>Name<input name="name" required></label><button>Add vhost</button></form></div>
+    <h3>Policies in ${esc(vhost)}</h3><div class="panel">${table([{ h: "Name", f: (p) => esc(p.name) }, { h: "Pattern", f: (p) => `<code>${esc(p.pattern)}</code>` }, { h: "Applies to", f: (p) => esc(p["apply-to"]) }, { h: "Definition", f: (p) => esc(JSON.stringify(p.definition)) }, { h: "Priority", f: (p) => p.priority, num: 1 }, { h: "", f: (p) => `<button class="danger" data-delpol="${esc(p.name)}">Delete</button>` }], policies, "No policies.")}
+      <form class="inline" id="addpol"><label>Name<input name="name" required></label><label>Pattern<input name="pattern" value="^"></label>
+      <label>Definition (JSON)<input name="def" value='{"message-ttl": 60000}' size="30"></label><label>Priority<input name="prio" type="number" value="0" style="width:70px"></label><button>Set policy</button></form></div>
+    <h3>Definitions</h3><div class="row"><button class="secondary" id="export">Download definitions.json</button>
+      <label>Import definitions<input type="file" id="import" accept="application/json"></label></div>`;
+  const reload = () => admin().catch((e) => toast(e.message));
+  $("#adduser").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { await api("PUT", "/users/" + enc(f.name.value), { password: f.pw.value, tags: f.tags.value });
+      await api("PUT", `/permissions/${enc(f.vh.value)}/${enc(f.name.value)}`, { configure: ".*", write: ".*", read: ".*" }); toast("User added"); reload(); } catch (err) { toast(err.message); } };
+  $("#addvh").onsubmit = async (e) => { e.preventDefault(); try { await api("PUT", "/vhosts/" + enc(e.target.name.value)); toast("Vhost added"); render(); } catch (err) { toast(err.message); } };
+  $("#addpol").onsubmit = async (e) => { e.preventDefault(); const f = e.target;
+    try { await api("PUT", `/policies/${enc(vhost)}/${enc(f.name.value)}`, { pattern: f.pattern.value, definition: JSON.parse(f.def.value), "apply-to": "queues", priority: +f.prio.value }); toast("Policy set"); reload(); } catch (err) { toast(err.message); } };
+  document.querySelectorAll("[data-deluser]").forEach((b) => b.onclick = async () => { if (confirm("Delete user " + b.dataset.deluser + "?")) { await api("DELETE", "/users/" + enc(b.dataset.deluser)); reload(); } });
+  document.querySelectorAll("[data-delvh]").forEach((b) => b.onclick = async () => { if (confirm("Delete vhost " + b.dataset.delvh + " and everything in it?")) { await api("DELETE", "/vhosts/" + enc(b.dataset.delvh)); render(); } });
+  document.querySelectorAll("[data-delpol]").forEach((b) => b.onclick = async () => { await api("DELETE", `/policies/${enc(vhost)}/${enc(b.dataset.delpol)}`); reload(); });
+  $("#export").onclick = async () => { const d = await api("GET", "/definitions"); const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" })); a.download = "definitions.json"; a.click(); };
+  $("#import").onchange = async (e) => { const file = e.target.files[0]; if (!file) return;
+    try { await api("POST", "/definitions", JSON.parse(await file.text())); toast("Definitions imported"); render(); } catch (err) { toast(err.message); } };
+}
+
+window.addEventListener("hashchange", render);
+render();
+</script>
+</body>
+</html>
