@@ -281,8 +281,10 @@ impl QueueStore for DiskQueue {
             let path = seg_path(&self.dir, id);
             let acks = fs::read(ack_path(&self.dir, id)).unwrap_or_default();
             let mut acked: HashSet<u32> = acks
-                .chunks_exact(4)
-                .map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| u32::from_be_bytes(*c))
                 .collect();
             let data = fs::read(&path)?;
             let mut off = 0usize;
