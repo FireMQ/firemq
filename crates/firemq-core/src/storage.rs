@@ -11,12 +11,19 @@ pub struct Loc {
     pub len: u32,
 }
 
-/// A message found by [`QueueStore::recover`].
-#[derive(Debug)]
+/// A message found by [`QueueStore::recover`]: enough metadata to queue it without
+/// loading its body.
+#[derive(Debug, Clone)]
 pub struct Recovered {
     pub seq: u64,
     pub loc: Loc,
-    pub message: Message,
+    /// Body size in bytes.
+    pub size: u64,
+    /// Arrival time in milliseconds since the Unix epoch.
+    pub published_at: u64,
+    /// The per-message TTL from the `expiration` property.
+    pub expiration_ms: Option<u64>,
+    pub priority: u8,
 }
 
 /// Persistence for one queue's messages. Owned by the queue's actor, so implementations
@@ -32,8 +39,8 @@ pub trait QueueStore: Send + 'static {
     /// Forgets a message that was acknowledged, expired or dropped.
     fn remove(&mut self, loc: Loc) -> io::Result<()>;
 
-    /// Takes the confirm tickets of persistent messages appended since the last call and
-    /// drops them once those messages are durable.
+    /// Ends a batch: writes buffered data and takes the confirm tickets of persistent
+    /// messages appended since the last call, dropping them once those messages are durable.
     fn commit(&mut self, tickets: Vec<Ticket>);
 
     /// Returns the messages that survived a restart, in sequence order.
@@ -50,13 +57,20 @@ pub trait QueueStore: Send + 'static {
 
 /// Creates queue stores and persists definitions.
 pub trait Store: Send + Sync + 'static {
-    /// Opens (or creates) the store for a queue.
+    /// Opens (or creates) the store for a queue. `meta` describes the queue (vhost, name,
+    /// flags and arguments) so a store can restore it after a crash.
     fn open_queue(
         &self,
         vhost: &str,
         queue: &str,
         durable: bool,
+        meta: &serde_json::Value,
     ) -> io::Result<Box<dyn QueueStore>>;
+
+    /// Lists the metadata of every durable queue that has data on disk.
+    fn stored_queues(&self) -> io::Result<Vec<serde_json::Value>> {
+        Ok(Vec::new())
+    }
 
     /// Writes the broker definitions (users, vhosts, durable topology).
     fn save_definitions(&self, _json: &serde_json::Value) -> io::Result<()> {
@@ -78,7 +92,9 @@ pub trait Store: Send + Sync + 'static {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MemoryStore;
 
-struct MemoryQueueStore;
+/// A queue store that keeps bodies in the queue and confirms immediately.
+#[derive(Debug, Default)]
+pub struct MemoryQueueStore;
 
 impl QueueStore for MemoryQueueStore {
     fn append(&mut self, _seq: u64, _msg: &Message, _persistent: bool) -> io::Result<Loc> {
@@ -112,6 +128,7 @@ impl Store for MemoryStore {
         _vhost: &str,
         _queue: &str,
         _durable: bool,
+        _meta: &serde_json::Value,
     ) -> io::Result<Box<dyn QueueStore>> {
         Ok(Box::new(MemoryQueueStore))
     }

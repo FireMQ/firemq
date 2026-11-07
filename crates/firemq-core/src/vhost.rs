@@ -106,6 +106,22 @@ fn inequivalent(
     ))
 }
 
+/// Metadata a store keeps next to a durable queue's data.
+pub(crate) fn queue_meta(
+    vhost: &str,
+    name: &str,
+    auto_delete: bool,
+    arguments: &FieldTable,
+) -> serde_json::Value {
+    serde_json::json!({
+        "vhost": vhost,
+        "name": name,
+        "durable": true,
+        "auto_delete": auto_delete,
+        "arguments": crate::json::table_to_json(arguments),
+    })
+}
+
 fn generated_name() -> String {
     let bytes: [u8; 16] = rand::random();
     format!(
@@ -345,10 +361,11 @@ impl VHost {
             ))
         })?;
         let durable = opts.durable;
+        let meta = queue_meta(&self.name, &name, opts.auto_delete, &opts.arguments);
         let store = self
             .ctx
             .store
-            .open_queue(&self.name, &name, durable && !opts.exclusive)
+            .open_queue(&self.name, &name, durable && !opts.exclusive, &meta)
             .map_err(|e| {
                 BrokerError::internal(format!("cannot open storage for queue '{name}': {e}"))
             })?;
@@ -380,25 +397,29 @@ impl VHost {
         })
     }
 
-    /// Re-creates a durable queue found in the definitions at startup.
-    pub fn restore_queue(
-        &self,
-        opts: QueueOptions,
-        recovered: Vec<Recovered>,
-    ) -> Result<QueueHandle> {
-        let config =
-            QueueConfig::from_args(&opts.arguments).map_err(BrokerError::precondition_failed)?;
-        let store = self
+    /// Re-creates a durable queue at startup, recovering its messages from the store.
+    /// Returns the queue and the number of messages recovered.
+    pub fn restore_queue(&self, opts: QueueOptions) -> Result<(QueueHandle, usize)> {
+        let config = QueueConfig::from_args(&opts.arguments).map_err(|e| {
+            BrokerError::precondition_failed(format!("{e} for queue '{}'", opts.name))
+        })?;
+        let meta = queue_meta(&self.name, &opts.name, opts.auto_delete, &opts.arguments);
+        let mut store = self
             .ctx
             .store
-            .open_queue(&self.name, &opts.name, true)
+            .open_queue(&self.name, &opts.name, true, &meta)
             .map_err(|e| {
                 BrokerError::internal(format!(
                     "cannot open storage for queue '{}': {e}",
                     opts.name
                 ))
             })?;
-        self.restore_queue_with(opts, config, store, recovered)
+        let recovered = store.recover().map_err(|e| {
+            BrokerError::internal(format!("cannot recover queue '{}': {e}", opts.name))
+        })?;
+        let n = recovered.len();
+        let q = self.restore_queue_with(opts, config, store, recovered)?;
+        Ok((q, n))
     }
 
     /// Re-creates a queue with an already-opened store, used by recovery.
@@ -653,10 +674,10 @@ impl VHost {
         arguments: &FieldTable,
         conn: Option<u64>,
     ) -> Result<()> {
-        if let Destination::Queue(n) = &destination {
-            if let Some(q) = self.topology.load().queues.get(n) {
-                self.check_exclusive(q, conn)?;
-            }
+        if let Destination::Queue(n) = &destination
+            && let Some(q) = self.topology.load().queues.get(n)
+        {
+            self.check_exclusive(q, conn)?;
         }
         let changed = self.modify(|t| {
             let Some(src) = t.exchanges.get(source).cloned() else {
@@ -824,10 +845,10 @@ fn route_into<'a>(
     for d in dests {
         match d {
             Destination::Queue(n) => {
-                if let Some(q) = t.queues.get(n) {
-                    if !out.contains(q) {
-                        out.push(q.clone());
-                    }
+                if let Some(q) = t.queues.get(n)
+                    && !out.contains(q)
+                {
+                    out.push(q.clone());
                 }
             }
             Destination::Exchange(n) => {

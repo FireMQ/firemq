@@ -17,6 +17,7 @@ bytes.workspace = true
 firemq-amqp.workspace = true
 firemq-core.workspace = true
 firemq-proto.workspace = true
+firemq-store.workspace = true
 futures.workspace = true
 rustls.workspace = true
 serde_json.workspace = true

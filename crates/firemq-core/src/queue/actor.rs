@@ -207,18 +207,19 @@ impl Actor {
         };
         for r in recovered {
             actor.next_seq = actor.next_seq.max(r.seq + 1);
-            let size = r.message.size() as u64;
-            let ttl = actor.ttl_for(&r.message);
-            let priority = r.message.properties.priority.unwrap_or(0);
-            actor.ready_bytes += size;
+            let ttl = match (actor.cfg.message_ttl, r.expiration_ms) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            actor.ready_bytes += r.size;
             actor.ready.push(Entry {
                 seq: r.seq,
                 msg: None,
                 loc: r.loc,
-                size,
-                expires_at: ttl.map(|t| r.message.published_at.saturating_add(t)),
+                size: r.size,
+                expires_at: ttl.map(|t| r.published_at.saturating_add(t)),
                 redelivered: true,
-                priority,
+                priority: r.priority,
             });
         }
         actor.publish_stats();
@@ -419,10 +420,10 @@ impl Actor {
             redelivered: false,
             priority,
         });
-        if let Some(t) = ticket {
-            if persistent {
-                self.tickets.push(t);
-            }
+        if let Some(t) = ticket
+            && persistent
+        {
+            self.tickets.push(t);
         }
         self.enforce_limits();
     }
@@ -603,10 +604,10 @@ impl Actor {
 
     /// Dead-letters an entry when a dead-letter exchange is set, then releases it.
     fn discard(&mut self, entry: Entry, reason: &str) {
-        if self.cfg.dead_letter_exchange.is_some() {
-            if let Some(msg) = self.load(&entry) {
-                self.dead_letter(&msg, reason);
-            }
+        if self.cfg.dead_letter_exchange.is_some()
+            && let Some(msg) = self.load(&entry)
+        {
+            self.dead_letter(&msg, reason);
         }
         self.finish_entry(entry);
     }
@@ -769,12 +770,11 @@ impl Actor {
 
     fn deliver_one(&mut self, idx: usize, permit: OwnedPermit<Delivery>) {
         let c = &self.consumers[idx];
-        if !c.no_ack {
-            if let Some(s) = &c.shared_limit {
-                if !s.try_acquire() {
-                    return;
-                }
-            }
+        if !c.no_ack
+            && let Some(s) = &c.shared_limit
+            && !s.try_acquire()
+        {
+            return;
         }
         let Some(entry) = self.pop_next() else {
             if let Some(s) = &self.consumers[idx].shared_limit {
@@ -827,11 +827,11 @@ impl Actor {
     fn next_deadline(&self) -> Option<Instant> {
         let now = now_ms();
         let mut at: Option<u64> = self.peek_next().and_then(|e| e.expires_at).map(|t| t + 1);
-        if let Some(exp) = self.cfg.expires {
-            if self.consumers.is_empty() {
-                let t = self.last_used + exp;
-                at = Some(at.map_or(t, |a| a.min(t)));
-            }
+        if let Some(exp) = self.cfg.expires
+            && self.consumers.is_empty()
+        {
+            let t = self.last_used + exp;
+            at = Some(at.map_or(t, |a| a.min(t)));
         }
         at.map(|t| Instant::now() + Duration::from_millis(t.saturating_sub(now)))
     }
@@ -839,11 +839,12 @@ impl Actor {
     fn on_timer(&mut self) {
         let now = now_ms();
         self.drop_expired_head(now);
-        if let Some(exp) = self.cfg.expires {
-            if self.consumers.is_empty() && now >= self.last_used + exp {
-                tracing::debug!(queue = %self.shared.name, "queue expired");
-                self.delete_self();
-            }
+        if let Some(exp) = self.cfg.expires
+            && self.consumers.is_empty()
+            && now >= self.last_used + exp
+        {
+            tracing::debug!(queue = %self.shared.name, "queue expired");
+            self.delete_self();
         }
     }
 
@@ -856,10 +857,9 @@ impl Actor {
 
     fn after_batch(&mut self) {
         self.try_deliver();
-        if !self.tickets.is_empty() {
-            let tickets = std::mem::take(&mut self.tickets);
-            self.store.commit(tickets);
-        }
+        // Commit every batch: it writes buffered messages and acks, and releases tickets.
+        let tickets = std::mem::take(&mut self.tickets);
+        self.store.commit(tickets);
         self.publish_stats();
     }
 
@@ -891,7 +891,7 @@ impl Actor {
             if let Err(e) = self.store.destroy() {
                 tracing::warn!(queue = %self.shared.name, error = %e, "failed to delete queue data");
             }
-        } else if !self.tickets.is_empty() {
+        } else {
             let tickets = std::mem::take(&mut self.tickets);
             self.store.commit(tickets);
         }
