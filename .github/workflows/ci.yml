@@ -39,21 +39,78 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
 
-  compat:
-    name: RabbitMQ clients
+  broker:
+    name: Build broker
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p firemq --locked
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firemq-debug
+          path: target/debug/firemq
+          retention-days: 3
+
+  compat:
+    name: RabbitMQ client (${{ matrix.client }})
+    needs: broker
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        client: [pika, amqplib, amqp091-go, java, dotnet, amqp091-go-upstream]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: firemq-debug
       - name: Start FireMQ
         run: |
-          ./target/debug/firemq --amqp 127.0.0.1:5672 > firemq.log 2>&1 &
-          sleep 1
-      - uses: astral-sh/setup-uv@v6
-      - name: pika
+          chmod +x firemq
+          ./firemq > firemq.log 2>&1 &
+          for i in $(seq 1 50); do nc -z 127.0.0.1 5672 && break; sleep 0.1; done
+      - if: matrix.client == 'pika'
+        uses: astral-sh/setup-uv@v6
+      - if: matrix.client == 'pika'
         run: uv run --with pika --with pytest pytest compat/python -v
+      - if: matrix.client == 'amqplib'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: matrix.client == 'amqplib'
+        working-directory: compat/node
+        run: npm install --no-audit --no-fund && npm test
+      - if: startsWith(matrix.client, 'amqp091-go')
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: compat/go/go.sum
+      - if: matrix.client == 'amqp091-go'
+        working-directory: compat/go
+        run: go test -count=1 -v ./...
+      - if: matrix.client == 'amqp091-go-upstream'
+        name: amqp091-go's own integration tests
+        run: |
+          git clone --depth 1 --branch v1.10.0 https://github.com/rabbitmq/amqp091-go.git /tmp/amqp091-go
+          cd /tmp/amqp091-go
+          go test -tags integration -count=1 -timeout 300s -v ./... 2>&1 | tee /tmp/upstream.log | grep -E '^(--- |ok|FAIL|PASS)'
+          exit ${PIPESTATUS[0]}
+      - if: matrix.client == 'java'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - if: matrix.client == 'java'
+        run: compat/java/run.sh
+      - if: matrix.client == 'dotnet'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - if: matrix.client == 'dotnet'
+        working-directory: compat/dotnet
+        run: dotnet run
       - name: Broker log
         if: always()
-        run: cat firemq.log
+        run: tail -n 200 firemq.log

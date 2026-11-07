@@ -16,6 +16,9 @@ struct Args {
     /// HTTP listen address (WebSocket, management API, UI).
     #[arg(long, env = "FIREMQ_HTTP", default_value = "0.0.0.0:15672")]
     http: SocketAddr,
+    /// Users who may only connect from localhost, comma-separated. Empty allows everyone.
+    #[arg(long, env = "FIREMQ_LOOPBACK_USERS", default_value = "guest")]
+    loopback_users: String,
 }
 
 #[tokio::main]
@@ -27,13 +30,20 @@ async fn main() -> std::io::Result<()> {
         )
         .init();
     let args = Args::parse();
-    let server = Server::start(ServerConfig {
+    let mut config = ServerConfig {
         amqp: Some(args.amqp),
         fire: Some(args.fire),
         http: Some(args.http),
         ..Default::default()
-    })
-    .await?;
+    };
+    config.broker.loopback_users = args
+        .loopback_users
+        .split(',')
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(String::from)
+        .collect();
+    let server = Server::start(config).await?;
     println!("FireMQ {} is running", env!("CARGO_PKG_VERSION"));
     if let Some(a) = server.amqp_addr() {
         println!("  AMQP       amqp://guest:guest@localhost:{}", a.port());
