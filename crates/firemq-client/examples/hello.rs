@@ -9,13 +9,13 @@ async fn main() -> Result<(), firemq_client::Error> {
     let url = std::env::var("FIREMQ_URL").unwrap_or_else(|_| "fire://localhost".into());
     let client = Client::connect(&url).await?;
     client
-        .declare_queue("hello", QueueOptions::default())
+        .declare_queue("hello.rust", QueueOptions::default())
         .await?;
-    client.publish("", "hello", "Hello World!").await?;
+    client.publish("", "hello.rust", "Hello World!").await?;
     println!(" [x] Sent 'Hello World!'");
 
     let mut sub = client
-        .subscribe("hello", SubscribeOptions::default())
+        .subscribe("hello.rust", SubscribeOptions::default())
         .await?;
     if let Some(msg) = sub.next().await {
         println!(" [x] Received '{}'", msg.body_str().unwrap_or_default());
