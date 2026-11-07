@@ -339,3 +339,18 @@ async fn large_messages_span_frames() {
         .unwrap();
     assert_eq!(msg.content.unwrap().len(), 1_000_000);
 }
+
+#[tokio::test]
+async fn crossing_channel_close_keeps_the_connection() {
+    let (_broker, addr) = start().await;
+    let (conn, ch1) = connect(addr).await;
+    let ch2 = conn.open_channel(None).await.unwrap();
+    // Provoke a channel error and close the channel at the same time.
+    publish(&ch1, "nonexisting-exchange", "", "x").await;
+    let _ = ch1.close().await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(conn.is_open());
+    ch2.exchange_declare(ExchangeDeclareArguments::new("test-channel-still-exists", "direct"))
+        .await
+        .unwrap();
+}

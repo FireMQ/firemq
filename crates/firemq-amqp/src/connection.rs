@@ -722,7 +722,7 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 );
                 return;
             }
-            if self.channels.contains_key(&ch) {
+            if self.channels.get(&ch).is_some_and(|c| !c.closing) {
                 self.close_connection(
                     BrokerError::new(
                         reply_code::CHANNEL_ERROR,
@@ -733,8 +733,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 );
                 return;
             }
-            self.channels.insert(ch, Channel::new());
-            self.info.channels.fetch_add(1, Ordering::Relaxed);
+            // Reopening a channel the broker closed is fine even before its close-ok arrives.
+            if self.channels.insert(ch, Channel::new()).is_none() {
+                self.info.channels.fetch_add(1, Ordering::Relaxed);
+            }
             self.send(
                 ch,
                 ChannelOpenOk {
@@ -744,6 +746,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             return;
         }
         let Some(chan) = self.channels.get(&ch) else {
+            if let Method::ChannelCloseOk(_) = method {
+                // A late close-ok for a channel that is already gone.
+                return;
+            }
             self.close_connection(
                 BrokerError::new(
                     reply_code::CHANNEL_ERROR,
@@ -757,10 +763,8 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
         if chan.closing {
             match method {
                 Method::ChannelCloseOk(_) => self.remove_channel(ch),
-                Method::ChannelClose(_) => {
-                    self.send(ch, ChannelCloseOk {});
-                    self.remove_channel(ch);
-                }
+                // Both sides closed at once: answer, and keep waiting for our close-ok.
+                Method::ChannelClose(_) => self.send(ch, ChannelCloseOk {}),
                 _ => {}
             }
             return;
