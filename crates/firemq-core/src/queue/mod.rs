@@ -70,18 +70,36 @@ impl SharedLimit {
         if self.limit == 0 {
             return true;
         }
-        self.in_flight
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < self.limit).then_some(n + 1)
-            })
-            .is_ok()
+        let mut n = self.in_flight.load(Ordering::Acquire);
+        while n < self.limit {
+            match self.in_flight.compare_exchange_weak(
+                n,
+                n + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => n = actual,
+            }
+        }
+        false
     }
 
     fn release(&self) {
-        if self.limit != 0 {
-            let _ = self
-                .in_flight
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+        if self.limit == 0 {
+            return;
+        }
+        let mut n = self.in_flight.load(Ordering::Acquire);
+        while n > 0 {
+            match self.in_flight.compare_exchange_weak(
+                n,
+                n - 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(actual) => n = actual,
+            }
         }
     }
 }
