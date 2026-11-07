@@ -360,9 +360,14 @@ impl Raw {
             buf: bytes::BytesMut::new(),
         };
         raw.expect(0, "connection.start").await;
+        let mut caps = firemq_amqp_codec::FieldTable::new();
+        caps.insert("connection.blocked", true);
+        let mut client_properties = firemq_amqp_codec::FieldTable::new();
+        client_properties.insert("capabilities", caps);
         raw.send(
             0,
             ConnectionStartOk {
+                client_properties,
                 mechanism: "PLAIN".into(),
                 response: b"\0guest\0guest".to_vec().into(),
                 locale: "en_US".into(),
@@ -483,4 +488,19 @@ async fn crossing_channel_close_keeps_the_connection() {
     // The broker-closed channel can be reopened.
     raw.send(1, ChannelOpen::default()).await;
     raw.expect(1, "channel.open-ok").await;
+}
+
+#[tokio::test]
+async fn alarms_send_connection_blocked_and_unblocked() {
+    let (broker, addr) = start().await;
+    let mut raw = Raw::connect(addr).await;
+    broker.set_blocked(true);
+    raw.expect(0, "connection.blocked").await;
+    broker.set_blocked(false);
+    raw.expect(0, "connection.unblocked").await;
+    // A connection opened during an alarm learns about it right away.
+    broker.set_blocked(true);
+    let mut late = Raw::connect(addr).await;
+    late.expect(0, "connection.blocked").await;
+    broker.set_blocked(false);
 }

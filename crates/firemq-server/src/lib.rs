@@ -9,6 +9,7 @@
 //! # }
 //! ```
 
+pub mod alarms;
 pub mod convert;
 mod http;
 pub mod native;
@@ -26,6 +27,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 
+pub use alarms::AlarmConfig;
 pub use firemq_store::StoreConfig;
 pub use native::NativeConfig;
 pub use tls::{IoStream, TlsConfig};
@@ -48,6 +50,8 @@ pub struct ServerConfig {
     /// Where durable data lives. `None` keeps everything in memory.
     pub data_dir: Option<PathBuf>,
     pub store: StoreConfig,
+    /// Memory and disk alarms; `None` disables them.
+    pub alarms: Option<AlarmConfig>,
     pub broker: BrokerConfig,
     pub amqp_config: AmqpConfig,
     pub native_config: NativeConfig,
@@ -67,6 +71,7 @@ impl Default for ServerConfig {
             tls: None,
             data_dir: None,
             store: StoreConfig::default(),
+            alarms: Some(AlarmConfig::default()),
             broker: BrokerConfig::default(),
             amqp_config: AmqpConfig::default(),
             native_config: NativeConfig::default(),
@@ -173,6 +178,13 @@ impl Server {
                 .save_definitions()
                 .map_err(|e| std::io::Error::other(format!("cannot write definitions: {e}")))?;
             tasks.push(broker.spawn_definitions_writer());
+        }
+        if let Some(a) = &config.alarms {
+            tasks.push(alarms::spawn(
+                broker.clone(),
+                a.clone(),
+                config.data_dir.clone(),
+            ));
         }
         let acceptor = config.tls.as_ref().map(tls::acceptor).transpose()?;
         let amqp = Arc::new(config.amqp_config.clone());

@@ -213,3 +213,147 @@ def test_dead_letter_on_reject(ch):
     method, props, body = ch.basic_get(dead, auto_ack=True)
     assert body == b"bad"
     assert props.headers["x-death"][0]["reason"] == "rejected"
+
+
+def test_message_ttl_dead_letters_expired_messages(ch):
+    dlx = name("dlx")
+    ch.exchange_declare(dlx, exchange_type="fanout")
+    dead = ch.queue_declare("", exclusive=True).method.queue
+    ch.queue_bind(dead, dlx)
+    q = name("ttl")
+    ch.queue_declare(q, arguments={"x-message-ttl": 100, "x-dead-letter-exchange": dlx})
+    ch.basic_publish("", q, b"short-lived")
+    time.sleep(0.5)
+    assert drain(ch, q) == []
+    method, props, body = ch.basic_get(dead, auto_ack=True)
+    assert body == b"short-lived"
+    assert props.headers["x-death"][0]["reason"] == "expired"
+
+
+def test_per_message_expiration(ch):
+    q = name("expiring")
+    ch.queue_declare(q)
+    ch.basic_publish("", q, b"gone", properties=pika.BasicProperties(expiration="50"))
+    ch.basic_publish("", q, b"kept")
+    time.sleep(0.3)
+    # Expired messages at the head are dropped when the queue is read.
+    assert drain(ch, q) == [b"kept"]
+
+
+def test_max_length_drops_oldest(ch):
+    q = name("bounded")
+    ch.queue_declare(q, arguments={"x-max-length": 3})
+    for i in range(6):
+        ch.basic_publish("", q, f"m{i}".encode())
+    time.sleep(0.1)
+    assert drain(ch, q) == [b"m3", b"m4", b"m5"]
+
+
+def test_reject_publish_overflow_nacks(ch):
+    q = name("full")
+    ch.queue_declare(q, arguments={"x-max-length": 1, "x-overflow": "reject-publish"})
+    ch.confirm_delivery()
+    ch.basic_publish("", q, b"fits")
+    with pytest.raises(pika.exceptions.NackError):
+        ch.basic_publish("", q, b"rejected")
+
+
+def test_priority_queue(ch):
+    q = name("prio")
+    ch.queue_declare(q, arguments={"x-max-priority": 10})
+    for body, prio in [(b"low", 1), (b"high", 9), (b"mid", 5)]:
+        ch.basic_publish("", q, body, properties=pika.BasicProperties(priority=prio))
+    time.sleep(0.1)
+    assert drain(ch, q) == [b"high", b"mid", b"low"]
+
+
+def test_single_active_consumer(ch):
+    q = name("sac")
+    ch.queue_declare(q, arguments={"x-single-active-consumer": True})
+    got = {"a": 0, "b": 0}
+
+    def make(tag):
+        def cb(channel, method, props, body):
+            got[tag] += 1
+            channel.basic_ack(method.delivery_tag)
+            if got["a"] + got["b"] == 5:
+                channel.stop_consuming()
+        return cb
+
+    ch.basic_consume(q, make("a"))
+    ch.basic_consume(q, make("b"))
+    for i in range(5):
+        ch.basic_publish("", q, b"x")
+    ch.connection.call_later(5, ch.stop_consuming)
+    ch.start_consuming()
+    assert sorted(got.values()) == [0, 5]
+
+
+def test_queue_expires_when_unused(ch):
+    q = name("ephemeral")
+    ch.queue_declare(q, arguments={"x-expires": 200})
+    time.sleep(0.6)
+    with pytest.raises(pika.exceptions.ChannelClosedByBroker) as e:
+        ch.queue_declare(q, passive=True)
+    assert e.value.reply_code == 404
+
+
+def test_alternate_exchange(ch):
+    ae = name("ae")
+    ch.exchange_declare(ae, exchange_type="fanout")
+    unrouted = ch.queue_declare("", exclusive=True).method.queue
+    ch.queue_bind(unrouted, ae)
+    ex = name("main")
+    ch.exchange_declare(ex, exchange_type="direct", arguments={"alternate-exchange": ae})
+    ch.basic_publish(ex, "nobody-listens", b"caught")
+    time.sleep(0.1)
+    assert drain(ch, unrouted) == [b"caught"]
+
+
+def test_exchange_to_exchange_binding(ch):
+    upstream = name("upstream")
+    downstream = name("downstream")
+    ch.exchange_declare(upstream, exchange_type="topic")
+    ch.exchange_declare(downstream, exchange_type="fanout")
+    ch.exchange_bind(downstream, upstream, routing_key="audit.#")
+    q = ch.queue_declare("", exclusive=True).method.queue
+    ch.queue_bind(q, downstream)
+    ch.basic_publish(upstream, "audit.login", b"yes")
+    ch.basic_publish(upstream, "metrics.cpu", b"no")
+    time.sleep(0.1)
+    assert drain(ch, q) == [b"yes"]
+
+
+def test_transactions(ch):
+    q = name("tx")
+    ch.queue_declare(q)
+    ch.tx_select()
+    ch.basic_publish("", q, b"rolled back")
+    ch.tx_rollback()
+    ch.basic_publish("", q, b"committed")
+    ch.tx_commit()
+    assert drain(ch, q) == [b"committed"]
+
+
+def test_recover_redelivers_unacked(ch):
+    q = name("recover")
+    ch.queue_declare(q)
+    ch.basic_publish("", q, b"again")
+    time.sleep(0.05)
+    method, _, _ = ch.basic_get(q)
+    assert not method.redelivered
+    ch.basic_recover(requeue=True)
+    method, _, body = ch.basic_get(q, auto_ack=True)
+    assert body == b"again" and method.redelivered
+
+
+def test_consumer_cancel_notification_on_queue_delete(ch):
+    q = name("doomed")
+    ch.queue_declare(q)
+    cancelled = []
+    ch.basic_consume(q, lambda *a: None, auto_ack=True)
+    ch.add_on_cancel_callback(lambda frame: cancelled.append(frame))
+    other = ch.connection.channel()
+    other.queue_delete(q)
+    ch.connection.process_data_events(time_limit=1)
+    assert len(cancelled) == 1

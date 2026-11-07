@@ -38,9 +38,24 @@ struct Args {
     /// Sync persistent messages to disk before confirming them.
     #[arg(long, env = "FIREMQ_FSYNC", default_value_t = true, action = clap::ArgAction::Set)]
     fsync: bool,
+    /// Pause publishers when the broker uses more than this fraction of system memory.
+    #[arg(long, env = "FIREMQ_MEMORY_HIGH_WATERMARK", default_value_t = 0.4)]
+    memory_high_watermark: f64,
+    /// Absolute memory limit such as 2GiB; overrides the watermark.
+    #[arg(long, env = "FIREMQ_MEMORY_LIMIT", value_parser = parse_size)]
+    memory_limit: Option<u64>,
+    /// Pause publishers when free disk space drops below this, such as 1GB.
+    #[arg(long, env = "FIREMQ_DISK_FREE_LIMIT", default_value = "50MB", value_parser = parse_size)]
+    disk_free_limit: u64,
     /// Users who may only connect from localhost, comma-separated. Empty allows everyone.
     #[arg(long, env = "FIREMQ_LOOPBACK_USERS", default_value = "guest")]
     loopback_users: String,
+}
+
+fn parse_size(s: &str) -> Result<u64, String> {
+    firemq_server::alarms::parse_size(s).ok_or_else(|| {
+        format!("invalid size '{s}'; use a number with an optional unit such as 512MB or 2GiB")
+    })
 }
 
 #[tokio::main]
@@ -67,6 +82,12 @@ async fn main() -> std::io::Result<()> {
         ..Default::default()
     };
     config.store.fsync = args.fsync;
+    config.alarms = Some(firemq_server::AlarmConfig {
+        memory_high_watermark: args.memory_high_watermark,
+        memory_limit: args.memory_limit,
+        disk_free_limit: args.disk_free_limit,
+        ..Default::default()
+    });
     config.broker.loopback_users = args
         .loopback_users
         .split(',')
