@@ -95,8 +95,15 @@ jobs:
         run: |
           git clone --depth 1 --branch v1.10.0 https://github.com/rabbitmq/amqp091-go.git /tmp/amqp091-go
           cd /tmp/amqp091-go
-          go test -tags integration -count=1 -timeout 300s -v ./... 2>&1 | tee /tmp/upstream.log | grep -E '^(--- |ok|FAIL|PASS)'
-          exit ${PIPESTATUS[0]}
+          status=0
+          go test -tags integration -count=1 -timeout 300s -v ./... > /tmp/upstream.log 2>&1 || status=$?
+          grep -E '^(--- |ok|FAIL|PASS)' /tmp/upstream.log || true
+          if [ "$status" -ne 0 ]; then
+            echo "::group::Last 120 lines of the test log"
+            grep -vE '^=== (RUN|PAUSE|CONT)' /tmp/upstream.log | tail -n 120
+            echo "::endgroup::"
+          fi
+          exit $status
       - if: matrix.client == 'java'
         uses: actions/setup-java@v4
         with:
