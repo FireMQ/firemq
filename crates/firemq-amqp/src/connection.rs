@@ -1026,6 +1026,11 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 let items = self.take(ch, m.delivery_tag, m.multiple)?;
                 self.reject(ch, items, m.requeue).await;
             }
+            Method::BasicRecover(BasicRecover { requeue: false })
+            | Method::BasicRecoverAsync(BasicRecoverAsync { requeue: false }) => {
+                // RabbitMQ does not redeliver to the same consumer either.
+                return Err(BrokerError::not_implemented("requeue=false"));
+            }
             Method::BasicRecover(_) | Method::BasicRecoverAsync(_) => {
                 let is_sync = matches!(method, Method::BasicRecover(_));
                 let items = self.take(ch, 0, true)?;
