@@ -687,14 +687,29 @@ pub const SCENARIOS: &[(&str, Scenario)] = &[
 ];
 
 /// Runs the selected scenarios. Returns the number of failures.
-pub async fn run(driver_cmd: &str, only: Option<&str>) -> Result<usize, String> {
-    let server = firemq::builder()
-        .ephemeral()
-        .random_ports()
+///
+/// `listen` is the address the broker binds (use `0.0.0.0` when the driver runs in a
+/// container) and `url_host` the host name the driver is told to connect to, for example
+/// `host.docker.internal`. A host other than localhost lets `guest` connect remotely.
+pub async fn run(
+    driver_cmd: &str,
+    only: Option<&str>,
+    listen: std::net::IpAddr,
+    url_host: &str,
+) -> Result<usize, String> {
+    let mut builder = firemq::builder().ephemeral().random_ports();
+    let addr = Some(std::net::SocketAddr::new(listen, 0));
+    builder = builder.amqp(addr).fire(addr).http(addr);
+    let local = matches!(url_host, "localhost" | "127.0.0.1" | "::1");
+    if !local {
+        builder.config_mut().broker.loopback_users.clear();
+    }
+    let server = builder
         .start()
         .await
         .map_err(|e| format!("cannot start the broker: {e}"))?;
-    let url = server.fire_url().expect("fire listener");
+    let port = server.fire_addr().expect("fire listener").port();
+    let url = format!("fire://guest:guest@{url_host}:{port}");
     let mut ctx = Ctx {
         d: Driver::spawn(driver_cmd).await?,
         server,

@@ -22,6 +22,12 @@ enum Cmd {
         /// Run one scenario.
         #[arg(long)]
         only: Option<String>,
+        /// Address the broker listens on; use 0.0.0.0 when the driver runs in a container.
+        #[arg(long, default_value = "127.0.0.1")]
+        listen: std::net::IpAddr,
+        /// Host name the driver connects to, for example host.docker.internal.
+        #[arg(long, default_value = "localhost")]
+        url_host: String,
     },
     /// List the scenarios.
     List,
@@ -38,7 +44,12 @@ async fn main() {
             }
         }
         Cmd::Driver => driver::run().await,
-        Cmd::Run { driver, only } => match runner::run(&driver, only.as_deref()).await {
+        Cmd::Run {
+            driver,
+            only,
+            listen,
+            url_host,
+        } => match runner::run(&driver, only.as_deref(), listen, &url_host).await {
             Ok(0) => {}
             Ok(_) => std::process::exit(1),
             Err(e) => {
