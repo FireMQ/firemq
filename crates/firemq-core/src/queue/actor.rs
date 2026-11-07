@@ -45,6 +45,8 @@ struct Unacked {
 
 struct Consumer {
     id: u64,
+    tag: String,
+    arguments: FieldTable,
     owner: Owner,
     deliveries: mpsc::Sender<Delivery>,
     events: mpsc::UnboundedSender<ConnEvent>,
@@ -457,6 +459,8 @@ impl Actor {
         };
         self.consumers.push(Consumer {
             id: spec.id,
+            tag: spec.tag,
+            arguments: spec.arguments,
             owner: spec.owner,
             deliveries: spec.deliveries,
             events: spec.events,
@@ -470,7 +474,28 @@ impl Actor {
         });
         self.ever_consumed = true;
         self.last_used = now_ms();
+        self.publish_consumers();
         Ok(())
+    }
+
+    fn publish_consumers(&self) {
+        let sac = self.cfg.single_active_consumer;
+        let list = self
+            .consumers
+            .iter()
+            .enumerate()
+            .map(|(i, c)| super::ConsumerInfo {
+                id: c.id,
+                tag: c.tag.clone(),
+                owner: c.owner,
+                no_ack: c.no_ack,
+                exclusive: c.exclusive,
+                limit: c.limit,
+                arguments: c.arguments.clone(),
+                active: !sac || i == 0,
+            })
+            .collect();
+        *self.shared.consumers.lock() = list;
     }
 
     fn remove_consumer(&mut self, id: u64, notify: bool) {
@@ -490,6 +515,7 @@ impl Actor {
         if c.unacked > 0 {
             self.retired.insert(c.id, c);
         }
+        self.publish_consumers();
         self.last_used = now_ms();
         if self.consumers.is_empty() && self.shared.auto_delete && self.ever_consumed {
             self.delete_self();

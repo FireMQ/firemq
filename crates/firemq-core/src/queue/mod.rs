@@ -147,6 +147,20 @@ pub struct GetResult {
     pub remaining: u32,
 }
 
+/// A consumer, as listed by the management API.
+#[derive(Debug, Clone)]
+pub struct ConsumerInfo {
+    pub id: u64,
+    pub tag: String,
+    pub owner: Owner,
+    pub no_ack: bool,
+    pub exclusive: bool,
+    pub limit: Limit,
+    pub arguments: FieldTable,
+    /// False when another consumer is the single active consumer.
+    pub active: bool,
+}
+
 /// Counters the queue actor publishes for the management API.
 #[derive(Debug, Default)]
 pub struct QueueStats {
@@ -223,6 +237,8 @@ pub struct QueueShared {
     /// The configuration from arguments alone, used to check redeclarations.
     pub declared_config: QueueConfig,
     pub stats: QueueStats,
+    /// The current consumers, refreshed by the actor when they change.
+    pub consumers: parking_lot::Mutex<Vec<ConsumerInfo>>,
     pub(crate) tx: mpsc::Sender<QueueCmd>,
 }
 

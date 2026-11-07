@@ -1009,6 +1009,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             Method::BasicGet(m) => self.basic_get(ch, m).await?,
             Method::BasicAck(m) => {
                 let items = self.take(ch, m.delivery_tag, m.multiple)?;
+                self.broker
+                    .counters()
+                    .acked
+                    .fetch_add(items.len() as u64, Ordering::Relaxed);
                 let owner = self.owner(ch);
                 if let Some(tx) = &mut self.chan(ch).tx {
                     tx.push(TxOp::Ack(items));
@@ -1222,6 +1226,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                     self.frame_max,
                 );
                 self.info.delivered.fetch_add(1, Ordering::Relaxed);
+                self.broker
+                    .counters()
+                    .delivered
+                    .fetch_add(1, Ordering::Relaxed);
             }
             None => self.send(
                 ch,
@@ -1371,6 +1379,11 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
         )?;
         self.has_published = true;
         self.info.published.fetch_add(1, Ordering::Relaxed);
+        let counters = self.broker.counters();
+        counters.published.fetch_add(1, Ordering::Relaxed);
+        if queues.is_empty() {
+            counters.unroutable.fetch_add(1, Ordering::Relaxed);
+        }
         let events = self.events_tx.clone();
         let ticket = self
             .chan(ch)
@@ -1435,6 +1448,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             self.frame_max,
         );
         self.info.delivered.fetch_add(1, Ordering::Relaxed);
+        self.broker
+            .counters()
+            .delivered
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     async fn on_event(&mut self, ev: ConnEvent) {
@@ -1447,6 +1464,12 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                     return;
                 };
                 let result = tracker.complete(seq, ack);
+                if ack {
+                    self.broker
+                        .counters()
+                        .confirmed
+                        .fetch_add(1, Ordering::Relaxed);
+                }
                 if c.closing {
                     return;
                 }

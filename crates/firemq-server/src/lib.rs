@@ -12,6 +12,8 @@
 pub mod alarms;
 pub mod convert;
 mod http;
+mod metrics;
+pub mod mgmt;
 pub mod native;
 pub mod tls;
 
@@ -243,11 +245,27 @@ impl Server {
             let listener = TcpListener::bind(addr).await?;
             let local = listener.local_addr()?;
             addrs.http = Some(local);
+            let mut listeners = Vec::new();
+            for (proto, a) in [
+                ("amqp", addrs.amqp),
+                ("amqp/ssl", addrs.amqps),
+                ("fire", addrs.fire),
+                ("fire/ssl", addrs.fires),
+                ("http", addrs.http),
+            ] {
+                if let Some(a) = a {
+                    listeners.push((proto.to_string(), a));
+                }
+            }
+            let rates = Arc::new(mgmt::rates::Rates::default());
+            tasks.push(rates.spawn(broker.clone(), Duration::from_secs(5)));
             let app = http::router(http::AppState {
                 broker: broker.clone(),
                 native: native.clone(),
                 local,
                 tls: false,
+                rates,
+                listeners: Arc::new(listeners),
             });
             tasks.push(tokio::spawn(async move {
                 let svc = app.into_make_service_with_connect_info::<SocketAddr>();

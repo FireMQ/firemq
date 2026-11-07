@@ -708,6 +708,10 @@ impl Conn {
             }
             Command::Ack(a) => {
                 let items = self.take(a.tag, a.multiple)?;
+                self.broker
+                    .counters()
+                    .acked
+                    .fetch_add(items.len() as u64, Ordering::Relaxed);
                 let owner = self.owner();
                 for (q, seqs) in group(items) {
                     q.ack(owner, seqs).await;
@@ -730,6 +734,10 @@ impl Conn {
                         if !g.no_ack {
                             self.unacked.insert(tag, (q, r.seq));
                         }
+                        self.broker
+                            .counters()
+                            .delivered
+                            .fetch_add(1, Ordering::Relaxed);
                         let (props, headers) = convert::from_basic(&r.message.properties);
                         self.send(Command::GetOk(
                             proto::GetOk {
@@ -840,6 +848,11 @@ impl Conn {
             .vhost
             .route(&p.exchange, &p.key, props.headers.as_ref())?;
         self.info.published.fetch_add(1, Ordering::Relaxed);
+        let counters = self.broker.counters();
+        counters.published.fetch_add(1, Ordering::Relaxed);
+        if queues.is_empty() {
+            counters.unroutable.fetch_add(1, Ordering::Relaxed);
+        }
         let ticket = (p.seq > 0).then(|| Ticket::new(self.events_tx.clone(), 0, p.seq));
         if queues.is_empty() {
             if p.mandatory {
@@ -916,6 +929,10 @@ impl Conn {
             d.message.body.clone(),
         ));
         self.info.delivered.fetch_add(1, Ordering::Relaxed);
+        self.broker
+            .counters()
+            .delivered
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     fn on_event(&mut self, ev: ConnEvent) {
@@ -929,6 +946,12 @@ impl Conn {
                         msg: "PRECONDITION_FAILED - a queue rejected the message".into(),
                         ..Default::default()
                     }));
+                }
+                if ack {
+                    self.broker
+                        .counters()
+                        .confirmed
+                        .fetch_add(1, Ordering::Relaxed);
                 }
                 if let Some(upto) = self.complete(seq, ack) {
                     self.send(Command::Confirm(proto::Confirm {

@@ -29,7 +29,9 @@ mod storage;
 mod vhost;
 
 pub use auth::{Access, Permission, User, Users};
-pub use broker::{Broker, BrokerConfig, ConnectionInfo, ConnectionRegistration, NodeStats};
+pub use broker::{
+    Broker, BrokerConfig, ConnectionInfo, ConnectionRegistration, Counters, NodeStats,
+};
 pub use confirm::{ConnEvent, Ticket};
 pub use definitions::RecoveryReport;
 pub use error::{BrokerError, Result};
@@ -37,8 +39,8 @@ pub use exchange::{Binding, Destination, Exchange, ExchangeKind, ExchangeOptions
 pub use firemq_amqp_codec::{BasicProperties, FieldTable, LongString, Value};
 pub use message::{Message, now_ms};
 pub use queue::{
-    ConsumerSpec, Delivery, GetResult, Limit, Overflow, Owner, QueueConfig, QueueHandle,
-    QueueOptions, QueueShared, QueueStats, SharedLimit,
+    ConsumerInfo, ConsumerSpec, Delivery, GetResult, Limit, Overflow, Owner, QueueConfig,
+    QueueHandle, QueueOptions, QueueShared, QueueStats, SharedLimit,
 };
 pub use routing::{TopicTrie, headers_match};
 pub use storage::{Loc, MemoryQueueStore, MemoryStore, QueueStore, Recovered, Store};
