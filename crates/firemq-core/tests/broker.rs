@@ -125,7 +125,14 @@ async fn publish_consume_ack() {
         assert!(!d.redelivered);
         seqs.push(d.seq);
     }
-    q.ack(seqs).await;
+    q.ack(
+        Owner {
+            conn: c.id,
+            channel: 1,
+        },
+        seqs,
+    )
+    .await;
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert_eq!(q.message_count(), 0);
     assert_eq!(
@@ -150,12 +157,12 @@ async fn requeued_messages_keep_their_order_and_come_first() {
     let d2 = c.next().await;
     let d3 = c.next().await;
     c.nothing().await;
-    q.reject(vec![d2.seq, d1.seq], true).await;
+    q.reject(d1.owner, vec![d2.seq, d1.seq], true).await;
     let r1 = c.next().await;
     let r2 = c.next().await;
     assert_eq!((body(&r1), r1.redelivered), ("m1".into(), true));
     assert_eq!((body(&r2), r2.redelivered), ("m2".into(), true));
-    q.ack(vec![d3.seq, r1.seq, r2.seq]).await;
+    q.ack(d3.owner, vec![d3.seq, r1.seq, r2.seq]).await;
     assert_eq!(body(&c.next().await), "m4");
 }
 
@@ -174,7 +181,7 @@ async fn prefetch_limits_unacked_deliveries() {
     let a = c.next().await;
     let _b = c.next().await;
     c.nothing().await;
-    q.ack(vec![a.seq]).await;
+    q.ack(a.owner, vec![a.seq]).await;
     assert_eq!(body(&c.next().await), "m2");
     c.nothing().await;
 }
@@ -388,7 +395,7 @@ async fn rejected_messages_are_dead_lettered_with_routing_key() {
         .await
         .unwrap();
     let d = c.next().await;
-    q.reject(vec![d.seq], false).await;
+    q.reject(d.owner, vec![d.seq], false).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(dlq.message_count(), 1);
 }
