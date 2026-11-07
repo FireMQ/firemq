@@ -20,11 +20,14 @@ let package = Package(
     products: [
         .library(name: "FireMQ", targets: ["FireMQ"]),
         .executable(name: "hello-firemq", targets: ["HelloFireMQ"]),
+        .executable(name: "firemq-conformance-driver", targets: ["ConformanceDriver"]),
     ],
     targets: [
         .systemLibrary(name: "FireMQFFI", path: "Sources/FireMQFFI"),
         .target(name: "FireMQ", dependencies: ["FireMQFFI"], path: "Sources/FireMQ"),
         .executableTarget(
             name: "HelloFireMQ", dependencies: ["FireMQ"], path: "Sources/HelloFireMQ"),
+        .executableTarget(
+            name: "ConformanceDriver", dependencies: ["FireMQ"], path: "Sources/ConformanceDriver"),
     ]
 )

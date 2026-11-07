@@ -63,30 +63,38 @@ Start a broker, then run each binding's tests. They connect to `$FIREMQ_URL`
 cargo run -p firemq -- --ephemeral &
 cargo build -p firemq-client-ffi --release
 
-# Python, and the conformance suite
+# Python
 (cd bindings/python && uv venv && uv pip install maturin pytest \
   && source .venv/bin/activate && maturin develop && pytest)
-cargo run -p firemq-conformance -- run --driver "bindings/python/.venv/bin/python bindings/python/conformance_driver.py"
 
-# Kotlin
-(cd bindings/kotlin && gradle test)          # FIREMQ_LIB_DIR=<dir> picks another library
+# Kotlin; FIREMQ_LIB_DIR=<dir> picks another library
+(cd bindings/kotlin && gradle test conformanceDriver)
 
 # Swift
 (cd bindings/swift && swift build -Xlinker -L../../target/release \
   && DYLD_LIBRARY_PATH=../../target/release .build/debug/hello-firemq)
 
-# Ruby (use libfiremq_client_ffi.dylib on macOS)
-(cd bindings/ruby && bundle install \
-  && FIREMQ_LIB=../../target/release/libfiremq_client_ffi.so bundle exec ruby -Ilib -Itest test/test_firemq.rb)
+# Ruby (libfiremq_client_ffi.dylib on macOS)
+export FIREMQ_LIB=$PWD/target/release/libfiremq_client_ffi.so
+(cd bindings/ruby && bundle install && bundle exec ruby -Ilib -Itest test/test_firemq.rb)
 
-# Dart, and the conformance suite over the C API
-(cd bindings/dart && dart pub get \
-  && FIREMQ_LIB=../../target/release/libfiremq_client_ffi.so dart test)
-FIREMQ_LIB=$PWD/target/release/libfiremq_client_ffi.so \
-  cargo run -p firemq-conformance -- run --driver "cd bindings/dart && dart run tool/conformance_driver.dart"
+# Dart, over the C API; also reads FIREMQ_LIB
+(cd bindings/dart && dart pub get && dart test)
 
 # C
 (cd bindings/c && make run PROFILE=release)
+```
+
+Every binding except C has a conformance driver for the SDK suite in
+[`spec/conformance.md`](../spec/conformance.md). The runner starts its own broker:
+
+```bash
+conformance() { cargo run -q -p firemq-conformance -- run --driver "$1"; }
+conformance "bindings/python/.venv/bin/python bindings/python/conformance_driver.py"
+conformance bindings/kotlin/build/conformance-driver
+conformance bindings/swift/.build/debug/firemq-conformance-driver
+conformance "cd bindings/ruby && bundle exec ruby -Ilib conformance_driver.rb"
+conformance "cd bindings/dart && dart run tool/conformance_driver.dart"
 ```
 
 ## Packaging

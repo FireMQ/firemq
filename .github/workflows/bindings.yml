@@ -1,7 +1,8 @@
 name: Bindings
 
 # Builds crates/firemq-client-ffi and tests every language binding in bindings/ against a
-# broker built from this repository.
+# broker built from this repository: each runs its tests or example, then the SDK conformance
+# suite (spec/conformance.md) through its driver.
 
 on:
   push:
@@ -103,7 +104,9 @@ jobs:
         working-directory: bindings/kotlin
         env:
           FIREMQ_LIB_DIR: ${{ github.workspace }}/ci-bin
-        run: gradle test --no-daemon
+        run: gradle test conformanceDriver --no-daemon
+      - name: Conformance
+        run: ci-bin/firemq-conformance run --driver bindings/kotlin/build/conformance-driver
 
   swift:
     name: Swift (macOS)
@@ -112,7 +115,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --locked -p firemq -p firemq-client-ffi
+      - run: cargo build --locked -p firemq -p firemq-conformance -p firemq-client-ffi
       - name: Start FireMQ
         run: |
           target/debug/firemq --ephemeral > firemq.log 2>&1 &
@@ -122,6 +125,10 @@ jobs:
         run: |
           swift build -Xlinker -L../../target/debug
           DYLD_LIBRARY_PATH=../../target/debug .build/debug/hello-firemq
+      - name: Conformance
+        env:
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/debug
+        run: target/debug/firemq-conformance run --driver bindings/swift/.build/debug/firemq-conformance-driver
 
   swift-xcframework:
     name: Swift XCFramework
@@ -164,6 +171,10 @@ jobs:
         run: |
           bundle install
           bundle exec ruby -Ilib -Itest test/test_firemq.rb
+      - name: Conformance
+        env:
+          FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
+        run: ci-bin/firemq-conformance run --driver "cd bindings/ruby && bundle exec ruby -Ilib conformance_driver.rb"
 
   dart:
     name: Dart

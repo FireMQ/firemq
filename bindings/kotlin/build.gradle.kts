@@ -18,9 +18,16 @@ repositories {
     mavenCentral()
 }
 
+// The conformance driver (spec/conformance.md) lives in its own source set so the library
+// does not depend on a JSON parser.
+val conformance: SourceSet by sourceSets.creating
+
 dependencies {
     api("net.java.dev.jna:jna:5.19.1")
     testImplementation(kotlin("test"))
+    "conformanceImplementation"(sourceSets.main.get().output)
+    "conformanceImplementation"("net.java.dev.jna:jna:5.19.1")
+    "conformanceImplementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 }
 
 kotlin {
@@ -39,5 +46,24 @@ tasks.test {
         events("passed", "failed", "skipped")
         showStandardStreams = true
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
+// Writes build/conformance-driver, a launcher for the conformance runner:
+//   gradle conformanceDriver
+//   firemq-conformance run --driver bindings/kotlin/build/conformance-driver
+tasks.register("conformanceDriver") {
+    dependsOn(conformance.classesTaskName)
+    val launcher = layout.buildDirectory.file("conformance-driver")
+    outputs.file(launcher)
+    doLast {
+        val classpath = conformance.runtimeClasspath.asPath
+        launcher.get().asFile.apply {
+            writeText(
+                "#!/bin/sh\nexec java -Djna.library.path=\"$libDir\" -cp \"$classpath\" " +
+                    "io.github.firemq.conformance.DriverKt \"$@\"\n",
+            )
+            setExecutable(true)
+        }
     }
 }
