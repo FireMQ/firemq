@@ -1,0 +1,11 @@
+/target
+**/target
+firemq-data/
+*.log
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.venv/
+node_modules/
