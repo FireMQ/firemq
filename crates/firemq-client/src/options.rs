@@ -11,6 +11,10 @@ pub struct ConnectOptions {
     /// Shown in the management UI.
     pub connection_name: String,
     pub connect_timeout: Duration,
+    /// Extra trusted CA certificates (PEM) for `fires://`, for example a self-signed one.
+    pub tls_ca_pem: Option<Vec<u8>>,
+    /// Skip certificate verification. Only for local development.
+    pub tls_insecure: bool,
 }
 
 impl ConnectOptions {
@@ -20,6 +24,8 @@ impl ConnectOptions {
             heartbeat: 30,
             connection_name: String::new(),
             connect_timeout: Duration::from_secs(10),
+            tls_ca_pem: None,
+            tls_insecure: false,
         })
     }
 }

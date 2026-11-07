@@ -9,13 +9,16 @@ use firemq_proto::{
     Get, Hello, Map, OkReply, PurgeQueue, Subscribe, Transport, Value, Welcome,
 };
 use parking_lot::Mutex;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, timeout};
 
 use crate::message::{Acker, Credit, Message, Subscription};
+use crate::tls::IoStream;
+
+type Reader = ReadHalf<Box<dyn IoStream>>;
+type Writer = WriteHalf<Box<dyn IoStream>>;
 use crate::options::*;
 use crate::{Error, Result};
 
@@ -69,7 +72,7 @@ pub struct QueueInfo {
     pub consumers: u32,
 }
 
-async fn read_command(r: &mut OwnedReadHalf, buf: &mut BytesMut, max: u32) -> Result<Command> {
+async fn read_command(r: &mut Reader, buf: &mut BytesMut, max: u32) -> Result<Command> {
     loop {
         if let Some(f) =
             proto::decode_frame(buf, max).map_err(|e| Error::Protocol(e.to_string()))?
@@ -91,20 +94,24 @@ impl Client {
     }
 
     pub async fn connect_with(opts: ConnectOptions) -> Result<Client> {
-        if opts.url.transport != Transport::Tcp {
+        if matches!(opts.url.transport, Transport::Ws | Transport::Wss) {
             return Err(Error::Protocol(
-                "this client version supports fire:// URLs; TLS and WebSocket support is coming"
+                "the Rust client connects with fire:// or fires://; WebSocket is for browsers"
                     .into(),
             ));
         }
-        let stream = timeout(
+        let tcp = timeout(
             opts.connect_timeout,
             TcpStream::connect(opts.url.authority()),
         )
         .await
         .map_err(|_| Error::Io(format!("connecting to {} timed out", opts.url.authority())))??;
-        stream.set_nodelay(true)?;
-        let (mut r, mut w) = stream.into_split();
+        tcp.set_nodelay(true)?;
+        let stream: Box<dyn IoStream> = match opts.url.transport {
+            Transport::Tls => crate::tls::wrap(tcp, &opts).await?,
+            _ => Box::new(tcp),
+        };
+        let (mut r, mut w) = tokio::io::split(stream);
         let mut client = Map::new();
         client.insert("product".into(), Value::from("firemq-rust"));
         client.insert("version".into(), Value::from(env!("CARGO_PKG_VERSION")));
@@ -502,7 +509,7 @@ impl Client {
 }
 
 async fn writer(
-    mut w: OwnedWriteHalf,
+    mut w: Writer,
     mut rx: mpsc::UnboundedReceiver<Bytes>,
     heartbeat: u32,
     last_recv: Arc<Mutex<Instant>>,
@@ -542,7 +549,7 @@ async fn writer(
 }
 
 async fn reader(
-    mut r: OwnedReadHalf,
+    mut r: Reader,
     mut buf: BytesMut,
     max_frame: u32,
     inner: Weak<Inner>,
