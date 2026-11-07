@@ -15,3 +15,20 @@ compat/dotnet/obj/
 compat/node/package-lock.json
 /examples/node/node_modules
 examples/node/package-lock.json
+
+# Language bindings
+bindings/python/python/firemq/_ffi/
+bindings/python/dist/
+bindings/kotlin/build/
+bindings/kotlin/.gradle/
+bindings/kotlin/.kotlin/
+bindings/swift/.build/
+bindings/swift/Package.resolved
+bindings/c/example
+bindings/c/*.o
+bindings/dart/.dart_tool/
+bindings/dart/pubspec.lock
+bindings/ruby/lib/firemq/*.so
+bindings/ruby/lib/firemq/*.dylib
+bindings/ruby/Gemfile.lock
+bindings/ruby/*.gem

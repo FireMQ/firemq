@@ -1,0 +1,26 @@
+# Settings for the generated bindings. See https://mozilla.github.io/uniffi-rs/latest/
+
+[bindings.kotlin]
+package_name = "io.github.firemq"
+cdylib_name = "firemq_client_ffi"
+
+# Kotlin exceptions already have a `message` property.
+[bindings.kotlin.rename]
+"FireMqError.Server.message" = "reason"
+"FireMqError.Unroutable.message" = "reason"
+"FireMqError.Nacked.message" = "reason"
+"FireMqError.Closed.message" = "reason"
+"FireMqError.Other.message" = "reason"
+
+[bindings.swift]
+module_name = "FireMQ"
+ffi_module_name = "FireMQFFI"
+ffi_module_filename = "FireMQFFI"
+
+[bindings.python]
+cdylib_name = "firemq_client_ffi"
+
+[bindings.ruby]
+cdylib_name = "firemq_client_ffi"
+# Ruby code: FIREMQ_LIB, then the library next to this file, then the system search path.
+cdylib_path = "[ENV['FIREMQ_LIB'], File.expand_path(FFI.map_library_name('firemq_client_ffi'), __dir__), 'firemq_client_ffi'].compact"
