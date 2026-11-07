@@ -170,8 +170,8 @@ final class Client implements Finalizable {
   /// Declares an exchange of type `direct`, `fanout`, `topic` or `headers`.
   void declareExchange(String name, String type,
           {bool durable = true, bool autoDelete = false, Map<String, Object?>? arguments}) =>
-      using((arena) => _check(n.declareExchange(_h, _str(name, arena), _str(type, arena),
-          durable, autoDelete, _json(arguments, arena))));
+      using((arena) => _check(n.declareExchange(
+          _h, _str(name, arena), _str(type, arena), durable, autoDelete, _json(arguments, arena))));
 
   void deleteExchange(String name, {bool ifUnused = false}) =>
       using((arena) => _check(n.deleteExchange(_h, _str(name, arena), ifUnused)));
@@ -183,8 +183,8 @@ final class Client implements Finalizable {
           _str(routingKey, arena), _json(arguments, arena))));
 
   void unbindQueue(String queue, String exchange, [String routingKey = '']) =>
-      using((arena) => _check(n.unbindQueue(
-          _h, _str(queue, arena), _str(exchange, arena), _str(routingKey, arena))));
+      using((arena) => _check(
+          n.unbindQueue(_h, _str(queue, arena), _str(exchange, arena), _str(routingKey, arena))));
 
   /// Routes messages published to [source] on to [destination].
   void bindExchange(String destination, String source, [String routingKey = '']) =>
@@ -213,8 +213,8 @@ final class Client implements Finalizable {
           ..confirm = confirm
           ..propertiesJson = _json(properties, arena)
           ..headersJson = _json(headers, arena);
-        _check(n.publish(_h, _str(exchange, arena), _str(routingKey, arena), data,
-            body.length, options));
+        _check(n.publish(
+            _h, _str(exchange, arena), _str(routingKey, arena), data, body.length, options));
       });
 
   /// Publishes UTF-8 text. See [publish].
@@ -236,8 +236,7 @@ final class Client implements Finalizable {
           confirm: confirm);
 
   /// Starts consuming. [prefetch] caps unacknowledged deliveries.
-  Subscription subscribe(String queue, {int prefetch = 100, bool noAck = false}) =>
-      using((arena) {
+  Subscription subscribe(String queue, {int prefetch = 100, bool noAck = false}) => using((arena) {
         final out = arena<Pointer<n.FiremqSubscription>>();
         _check(n.subscribe(_h, _str(queue, arena), prefetch, noAck, out));
         return Subscription._(out.value);

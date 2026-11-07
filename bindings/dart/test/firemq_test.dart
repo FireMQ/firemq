@@ -61,8 +61,7 @@ void main() {
   });
 
   test('errors carry reply codes', () {
-    expect(
-        () => Client.connect(url.replaceFirst('guest:guest', 'guest:wrong')),
+    expect(() => Client.connect(url.replaceFirst('guest:guest', 'guest:wrong')),
         throwsA(isA<ServerException>().having((e) => e.code, 'code', 403)));
     expect(() => client.publishString('', '$queue.nowhere', 'x', mandatory: true),
         throwsA(isA<UnroutableException>().having((e) => e.code, 'code', 312)));
@@ -75,8 +74,7 @@ void main() {
         exclusive: true,
         arguments: {'x-max-length': 1, 'x-overflow': 'reject-publish'});
     client.publishString('', full, 'fits');
-    expect(() => client.publishString('', full, 'rejected'),
-        throwsA(isA<NackedException>()));
+    expect(() => client.publishString('', full, 'rejected'), throwsA(isA<NackedException>()));
     expect(client.purgeQueue(full), 1);
     expect(client.deleteQueue(full), 0);
 

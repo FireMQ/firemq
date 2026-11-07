@@ -24,8 +24,9 @@ subclasses of `firemq.FireMQError`: `ServerError` (with an AMQP `code`), `Unrout
 
 ```bash
 uv venv && uv pip install maturin pytest
-uv run maturin develop
-FIREMQ_URL=fire://guest:guest@localhost:5673 uv run pytest
+source .venv/bin/activate
+maturin develop
+FIREMQ_URL=fire://guest:guest@localhost:5673 pytest
 ```
 
 The conformance driver, `conformance_driver.py`, runs the SDK conformance suite:

@@ -53,13 +53,14 @@ final lastErrorCode =
     _lib.lookupFunction<Uint16 Function(), int Function()>('firemq_last_error_code');
 final version = _lib.lookupFunction<_Str Function(), _Str Function()>('firemq_version');
 
-final connect = _lib.lookupFunction<Int32 Function(_Str, Pointer<_C>),
-    int Function(_Str, Pointer<_C>)>('firemq_connect');
+final connect =
+    _lib.lookupFunction<Int32 Function(_Str, Pointer<_C>), int Function(_Str, Pointer<_C>)>(
+        'firemq_connect');
 final close = _lib.lookupFunction<Int32 Function(_C), int Function(_C)>('firemq_close');
 
 final declareQueue = _lib.lookupFunction<
-    Int32 Function(_C, _Str, Bool, Bool, Bool, _Str, Pointer<_Str>, Pointer<Uint64>,
-        Pointer<Uint32>),
+    Int32 Function(
+        _C, _Str, Bool, Bool, Bool, _Str, Pointer<_Str>, Pointer<Uint64>, Pointer<Uint32>),
     int Function(_C, _Str, bool, bool, bool, _Str, Pointer<_Str>, Pointer<Uint64>,
         Pointer<Uint32>)>('firemq_declare_queue');
 final deleteQueue = _lib.lookupFunction<Int32 Function(_C, _Str, Pointer<Uint64>),
@@ -68,19 +69,22 @@ final purgeQueue = _lib.lookupFunction<Int32 Function(_C, _Str, Pointer<Uint64>)
     int Function(_C, _Str, Pointer<Uint64>)>('firemq_purge_queue');
 final declareExchange = _lib.lookupFunction<Int32 Function(_C, _Str, _Str, Bool, Bool, _Str),
     int Function(_C, _Str, _Str, bool, bool, _Str)>('firemq_declare_exchange');
-final deleteExchange = _lib.lookupFunction<Int32 Function(_C, _Str, Bool),
-    int Function(_C, _Str, bool)>('firemq_delete_exchange');
+final deleteExchange =
+    _lib.lookupFunction<Int32 Function(_C, _Str, Bool), int Function(_C, _Str, bool)>(
+        'firemq_delete_exchange');
 final bindQueue = _lib.lookupFunction<Int32 Function(_C, _Str, _Str, _Str, _Str),
     int Function(_C, _Str, _Str, _Str, _Str)>('firemq_bind_queue');
-final unbindQueue = _lib.lookupFunction<Int32 Function(_C, _Str, _Str, _Str),
-    int Function(_C, _Str, _Str, _Str)>('firemq_unbind_queue');
-final bindExchange = _lib.lookupFunction<Int32 Function(_C, _Str, _Str, _Str),
-    int Function(_C, _Str, _Str, _Str)>('firemq_bind_exchange');
+final unbindQueue =
+    _lib.lookupFunction<Int32 Function(_C, _Str, _Str, _Str), int Function(_C, _Str, _Str, _Str)>(
+        'firemq_unbind_queue');
+final bindExchange =
+    _lib.lookupFunction<Int32 Function(_C, _Str, _Str, _Str), int Function(_C, _Str, _Str, _Str)>(
+        'firemq_bind_exchange');
 
 final publish = _lib.lookupFunction<
     Int32 Function(_C, _Str, _Str, Pointer<Uint8>, Size, Pointer<FiremqPublishOptions>),
-    int Function(_C, _Str, _Str, Pointer<Uint8>, int,
-        Pointer<FiremqPublishOptions>)>('firemq_publish');
+    int Function(
+        _C, _Str, _Str, Pointer<Uint8>, int, Pointer<FiremqPublishOptions>)>('firemq_publish');
 
 final subscribe = _lib.lookupFunction<Int32 Function(_C, _Str, Uint32, Bool, Pointer<_S>),
     int Function(_C, _Str, int, bool, Pointer<_S>)>('firemq_subscribe');
