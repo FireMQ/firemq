@@ -1,0 +1,7 @@
+// The C interface UniFFI generates for the Rust library. Link libfiremq_client_ffi with
+// `swift build -Xlinker -L<directory>`, or use the XCFramework from build-xcframework.sh.
+module FireMQFFI {
+    header "FireMQFFI.h"
+    link "firemq_client_ffi"
+    export *
+}

@@ -32,3 +32,4 @@ bindings/ruby/lib/firemq/*.so
 bindings/ruby/lib/firemq/*.dylib
 bindings/ruby/Gemfile.lock
 bindings/ruby/*.gem
+bindings/swift/build/

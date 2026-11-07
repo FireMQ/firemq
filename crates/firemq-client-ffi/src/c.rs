@@ -175,7 +175,8 @@ pub extern "C" fn firemq_version() -> *const c_char {
 }
 
 /// The message of the last failed call on this thread, or NULL when the last call
-/// succeeded. Borrowed: valid until the next FireMQ call on this thread.
+/// succeeded. Borrowed: valid until the next FireMQ call that returns a status on this
+/// thread.
 #[unsafe(no_mangle)]
 pub extern "C" fn firemq_last_error() -> *const c_char {
     LAST_ERROR.with(|last| {

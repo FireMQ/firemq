@@ -4,8 +4,10 @@
 package_name = "io.github.firemq"
 cdylib_name = "firemq_client_ffi"
 
-# Kotlin exceptions already have a `message` property.
+# Kotlin exceptions already have a `message` property, and UniFFI objects implement
+# AutoCloseable, whose close() frees the native object.
 [bindings.kotlin.rename]
+"Client.close" = "disconnect"
 "FireMqError.Server.message" = "reason"
 "FireMqError.Unroutable.message" = "reason"
 "FireMqError.Nacked.message" = "reason"
