@@ -1,0 +1,7 @@
+target
+firemq-data
+**/node_modules
+compat/java/lib
+compat/dotnet/bin
+compat/dotnet/obj
+.git
