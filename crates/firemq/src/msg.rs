@@ -32,7 +32,7 @@ pub struct PubArgs {
     /// Do not write the message to disk.
     #[arg(long)]
     pub transient: bool,
-    /// Fail when no queue receives the message.
+    /// Fail when no queue receives the message. Always on with --queue.
     #[arg(long)]
     pub mandatory: bool,
 }
@@ -95,7 +95,7 @@ pub async fn publish(a: PubArgs) -> Result<(), String> {
     let client = connect(&a.url).await?;
     let mut opts = PublishOptions {
         persistent: !a.transient,
-        mandatory: a.mandatory,
+        mandatory: a.mandatory || a.queue.is_some(),
         ..Default::default()
     };
     opts.properties.content_type = a.content_type.clone();
@@ -105,6 +105,13 @@ pub async fn publish(a: PubArgs) -> Result<(), String> {
             .ok_or_else(|| format!("expected KEY=VALUE, got '{kv}'"))?;
         opts.headers.insert(k.to_string(), v.into());
     }
+    let to_queue = a.queue.is_some();
+    let explain = move |e: firemq_client::Error| match e {
+        firemq_client::Error::Unroutable { key, .. } if to_queue => {
+            format!("no queue named '{key}'; declare it first with: firemq ctl declare-queue {key}")
+        }
+        e => e.to_string(),
+    };
     let started = std::time::Instant::now();
     let mut pending = futures::stream::FuturesUnordered::new();
     use futures::StreamExt;
@@ -113,15 +120,11 @@ pub async fn publish(a: PubArgs) -> Result<(), String> {
         let (e, k, b, o) = (exchange.clone(), key.clone(), body.clone(), opts.clone());
         pending.push(async move { c.publish_with(&e, &k, b, o).await });
         if pending.len() >= 512 {
-            pending
-                .next()
-                .await
-                .transpose()
-                .map_err(|e| e.to_string())?;
+            pending.next().await.transpose().map_err(explain)?;
         }
     }
     while let Some(r) = pending.next().await {
-        r.map_err(|e| e.to_string())?;
+        r.map_err(explain)?;
     }
     let target = if exchange.is_empty() {
         format!("queue '{key}'")

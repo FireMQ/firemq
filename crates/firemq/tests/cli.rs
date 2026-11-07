@@ -162,6 +162,9 @@ async fn pub_reads_the_body_from_stdin_and_errors_are_clear() {
     ok(exec(&u, &["pub", "--queue", "in"], Some("from stdin")).await);
     let got = run(&server, &["sub", "in", "--count", "1"]).await;
     assert!(got.starts_with("from stdin"));
+    let out = exec(&u, &["pub", "--queue", "missing", "lost"], None).await;
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no queue named 'missing'"));
     let out = exec(&u, &["ctl", "list", "queues", "--pass", "wrong"], None).await;
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("login failed for user 'guest'"));
