@@ -371,7 +371,6 @@ impl Raw {
                 mechanism: "PLAIN".into(),
                 response: b"\0guest\0guest".to_vec().into(),
                 locale: "en_US".into(),
-                ..Default::default()
             },
         )
         .await;
