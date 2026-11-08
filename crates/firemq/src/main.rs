@@ -46,6 +46,16 @@ enum Command {
     Doctor(doctor::DoctorArgs),
     /// Print shell completions, for example: firemq completions zsh > ~/.zfunc/_firemq
     Completions { shell: clap_complete::Shell },
+    /// Exit 0 when a local broker answers its health probe (for container health checks).
+    #[command(hide = true)]
+    Health {
+        #[arg(
+            long,
+            env = "FIREMQ_HTTP_URL",
+            default_value = "http://127.0.0.1:15672"
+        )]
+        url: String,
+    },
 }
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -66,6 +76,7 @@ fn main() {
         Some(Command::Sub(args)) => runtime().block_on(msg::subscribe(args)),
         Some(Command::Bench(args)) => runtime().block_on(bench::run(args)),
         Some(Command::Doctor(args)) => doctor::run(args),
+        Some(Command::Health { url }) => health(&url),
         Some(Command::Completions { shell }) => {
             clap_complete::generate(shell, &mut Cli::command(), "firemq", &mut std::io::stdout());
             Ok(())
@@ -75,6 +86,18 @@ fn main() {
         eprintln!("error: {e}");
         std::process::exit(1);
     }
+}
+
+fn health(url: &str) -> Result<(), String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(3)))
+        .build()
+        .into();
+    agent
+        .get(format!("{}/healthz", url.trim_end_matches('/')))
+        .call()
+        .map(|_| ())
+        .map_err(|e| format!("unhealthy: {e}"))
 }
 
 fn init(path: &str, force: bool) -> Result<(), String> {

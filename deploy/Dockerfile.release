@@ -1,0 +1,16 @@
+# Packages prebuilt static binaries (dist/<arch>/firemq) for each platform.
+FROM scratch
+ARG TARGETARCH
+LABEL org.opencontainers.image.title="FireMQ" \
+      org.opencontainers.image.description="A lean, fast, RabbitMQ-compatible message broker" \
+      org.opencontainers.image.source="https://github.com/FireMQ/firemq" \
+      org.opencontainers.image.licenses="Apache-2.0"
+COPY dist/${TARGETARCH}/firemq /firemq
+COPY dist/data /data
+ENV FIREMQ_DATA_DIR=/data \
+    FIREMQ_LOOPBACK_USERS="" \
+    FIREMQ_HTTP_URL=http://127.0.0.1:15672
+VOLUME /data
+EXPOSE 5672 5671 5673 5674 15672
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s CMD ["/firemq", "health"]
+ENTRYPOINT ["/firemq"]

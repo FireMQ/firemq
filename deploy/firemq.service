@@ -1,0 +1,23 @@
+# systemd unit. Install the binary to /usr/local/bin/firemq, then:
+#   sudo useradd --system --home /var/lib/firemq firemq
+#   sudo cp firemq.service /etc/systemd/system/ && sudo systemctl enable --now firemq
+[Unit]
+Description=FireMQ message broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=firemq
+Group=firemq
+# Add --config /etc/firemq/firemq.toml to use a settings file.
+ExecStart=/usr/local/bin/firemq --data-dir /var/lib/firemq
+StateDirectory=firemq
+LimitNOFILE=65536
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/firemq
+
+[Install]
+WantedBy=multi-user.target
