@@ -403,6 +403,7 @@ async fn run(
         last_recv: Instant::now(),
         last_send: Instant::now(),
         blocked: false,
+        has_published: false,
         done: false,
     };
     conn.run().await;
@@ -440,6 +441,7 @@ struct Conn {
     last_recv: Instant,
     last_send: Instant,
     blocked: bool,
+    has_published: bool,
     done: bool,
 }
 
@@ -478,7 +480,7 @@ impl Conn {
                         Err(_) => break,
                     }
                 }
-                frame = self.frames.recv(), if !self.blocked => {
+                frame = self.frames.recv(), if !(self.blocked && self.has_published) => {
                     match frame {
                         None => break,
                         Some(Err(e)) => {
@@ -832,6 +834,7 @@ impl Conn {
                 self.user.name
             )));
         }
+        self.has_published = true;
         let props = convert::to_basic(&p.props, &p.headers, p.persistent);
         let queues = self
             .vhost
@@ -948,7 +951,10 @@ impl Conn {
                 }
             }
             ConnEvent::Blocked(b) => {
-                self.send(Command::Flow(proto::Flow { pause: b }));
+                if b != self.blocked {
+                    self.send(Command::Flow(proto::Flow { pause: b }));
+                }
+                self.blocked = b;
             }
             ConnEvent::Close { code, reason } => {
                 self.send(fatal(code, reason));

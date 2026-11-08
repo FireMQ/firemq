@@ -29,7 +29,7 @@ mod storage;
 mod vhost;
 
 pub use auth::{Access, Permission, User, Users};
-pub use broker::{Broker, BrokerConfig, ConnectionInfo, ConnectionRegistration};
+pub use broker::{Broker, BrokerConfig, ConnectionInfo, ConnectionRegistration, NodeStats};
 pub use confirm::{ConnEvent, Ticket};
 pub use definitions::RecoveryReport;
 pub use error::{BrokerError, Result};

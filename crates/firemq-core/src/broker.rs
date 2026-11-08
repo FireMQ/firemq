@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use parking_lot::{Mutex, RwLock};
 use tokio::sync::Notify;
@@ -76,6 +76,17 @@ pub struct ConnectionInfo {
     pub delivered: AtomicU64,
 }
 
+/// Resource usage and alarm state, updated by the alarm monitor.
+#[derive(Debug, Default)]
+pub struct NodeStats {
+    pub mem_used: AtomicU64,
+    pub mem_limit: AtomicU64,
+    pub disk_free: AtomicU64,
+    pub disk_limit: AtomicU64,
+    pub mem_alarm: AtomicBool,
+    pub disk_alarm: AtomicBool,
+}
+
 /// Keeps a connection listed until dropped.
 pub struct ConnectionRegistration {
     broker: Broker,
@@ -94,6 +105,8 @@ struct Inner {
     vhosts: RwLock<BTreeMap<String, Arc<VHost>>>,
     connections: Mutex<BTreeMap<u64, Arc<ConnectionInfo>>>,
     started_at: u64,
+    blocked: AtomicBool,
+    node: NodeStats,
 }
 
 /// The broker: the set of virtual hosts plus shared services. Cheap to clone.
@@ -126,6 +139,8 @@ impl Broker {
                 vhosts: RwLock::new(BTreeMap::new()),
                 connections: Mutex::new(BTreeMap::new()),
                 started_at: now_ms(),
+                blocked: AtomicBool::new(false),
+                node: NodeStats::default(),
             }),
         };
         broker.add_vhost("/");
@@ -237,6 +252,9 @@ impl Broker {
         let id = info.id;
         let info = Arc::new(info);
         self.inner.connections.lock().insert(id, info.clone());
+        if self.is_blocked() {
+            let _ = info.events.send(ConnEvent::Blocked(true));
+        }
         (
             info,
             ConnectionRegistration {
@@ -252,6 +270,26 @@ impl Broker {
 
     pub fn connection(&self, id: u64) -> Option<Arc<ConnectionInfo>> {
         self.inner.connections.lock().get(&id).cloned()
+    }
+
+    /// Resource usage and alarm state.
+    pub fn node_stats(&self) -> &NodeStats {
+        &self.inner.node
+    }
+
+    /// True while an alarm pauses publishers.
+    pub fn is_blocked(&self) -> bool {
+        self.inner.blocked.load(Ordering::Relaxed)
+    }
+
+    /// Pauses or resumes publishers on every connection.
+    pub fn set_blocked(&self, blocked: bool) {
+        if self.inner.blocked.swap(blocked, Ordering::Relaxed) == blocked {
+            return;
+        }
+        for c in self.connections() {
+            let _ = c.events.send(ConnEvent::Blocked(blocked));
+        }
     }
 
     /// Resolves when durable definitions changed since the last call.
