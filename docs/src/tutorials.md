@@ -75,12 +75,26 @@ JavaScript:
 {{#include ../../examples/node/publish_subscribe.mjs}}
 ```
 
+Rust:
+
+```rust
+{{#include ../../crates/firemq-client/examples/publish_subscribe.rs}}
+```
+
 ## Routing
 
 A direct exchange delivers a message to the queues bound with exactly its routing key. Here only the `error` message reaches the queue.
 
+Python:
+
 ```python
 {{#include ../../examples/python/routing.py}}
+```
+
+Rust, with a queue bound to two keys:
+
+```rust
+{{#include ../../crates/firemq-client/examples/routing.rs}}
 ```
 
 ## Topics

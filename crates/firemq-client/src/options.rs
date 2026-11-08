@@ -15,6 +15,38 @@ pub struct ConnectOptions {
     pub tls_ca_pem: Option<Vec<u8>>,
     /// Skip certificate verification. Only for local development.
     pub tls_insecure: bool,
+    /// Reconnect after losing the connection, recreating the topology and subscriptions
+    /// this client declared. `None` turns reconnection off.
+    pub reconnect: Option<Reconnect>,
+}
+
+/// How the client reconnects after it loses the connection.
+///
+/// After reconnecting, the client declares again the exchanges, queues and bindings it
+/// declared, and resumes every subscription. Publishes waiting for a confirm are sent again,
+/// so a message can arrive twice. Messages delivered before the connection dropped are
+/// redelivered by the broker; acknowledging the old copies does nothing.
+#[derive(Debug, Clone)]
+pub struct Reconnect {
+    /// Wait before the first attempt. It doubles after each failed attempt up to `max_delay`.
+    pub initial_delay: Duration,
+    pub max_delay: Duration,
+    /// Stop after this many failed attempts in a row. `None` keeps trying.
+    pub max_attempts: Option<u32>,
+    /// How long a call made while reconnecting waits before it fails with
+    /// [`crate::Error::Closed`].
+    pub wait: Duration,
+}
+
+impl Default for Reconnect {
+    fn default() -> Self {
+        Self {
+            initial_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(5),
+            max_attempts: None,
+            wait: Duration::from_secs(30),
+        }
+    }
 }
 
 impl ConnectOptions {
@@ -26,6 +58,7 @@ impl ConnectOptions {
             connect_timeout: Duration::from_secs(10),
             tls_ca_pem: None,
             tls_insecure: false,
+            reconnect: Some(Reconnect::default()),
         })
     }
 }
