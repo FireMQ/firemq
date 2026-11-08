@@ -28,7 +28,7 @@ fn disable_transparent_huge_pages() {
 
 /// FireMQ: a lean, fast, RabbitMQ-compatible message broker.
 ///
-/// Run `firemq` with no arguments to start a broker with zero configuration.
+/// Run `firemq` with no arguments to start a broker with the default settings.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None, args_conflicts_with_subcommands = true)]
 struct Cli {
