@@ -152,7 +152,8 @@ jobs:
           # maturin reads UniFFI's metadata from the library's symbols, which stripping removes
           # on Linux, so strip only debug information there.
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, manylinux: "2014", strip: debuginfo }
-          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, manylinux: "2014", strip: debuginfo }
+          # Built natively: the manylinux2014 cross-compiler cannot assemble ring's arm64 code.
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, manylinux: "2014", strip: debuginfo }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: macos-latest, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
