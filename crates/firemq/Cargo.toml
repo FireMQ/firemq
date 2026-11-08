@@ -1,6 +1,6 @@
 [package]
 name = "firemq"
-description = "A lean, fast, RabbitMQ-compatible message broker. One binary, zero config."
+description = "A lean, fast, RabbitMQ-compatible message broker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,6 @@
 # FireMQ
 
-A lean, fast, RabbitMQ-compatible message broker written in Rust. One binary, zero config.
+A lean, fast, RabbitMQ-compatible message broker written in Rust.
 
 [![CI](https://github.com/FireMQ/firemq/actions/workflows/ci.yml/badge.svg)](https://github.com/FireMQ/firemq/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
