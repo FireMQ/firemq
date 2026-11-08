@@ -23,6 +23,7 @@
 mod client;
 mod message;
 mod options;
+mod tls;
 
 pub use client::{Client, QueueInfo};
 pub use firemq_proto::{ConnectUrl, Map, Properties, Value};
