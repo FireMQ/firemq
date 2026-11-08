@@ -986,10 +986,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             }
             Method::BasicConsume(m) => self.basic_consume(ch, m).await?,
             Method::BasicCancel(m) => {
-                if let Some(id) = self.chan(ch).consumers.remove(&m.consumer_tag) {
-                    if let Some(c) = self.consumers.remove(&id) {
-                        c.queue.cancel(id).await;
-                    }
+                if let Some(id) = self.chan(ch).consumers.remove(&m.consumer_tag)
+                    && let Some(c) = self.consumers.remove(&id)
+                {
+                    c.queue.cancel(id).await;
                 }
                 if !m.nowait {
                     self.send(
@@ -1333,13 +1333,13 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
         body: Bytes,
     ) -> Res {
         self.check(Access::Write, "exchange", &method.exchange)?;
-        if let Some(uid) = &properties.user_id {
-            if *uid != self.user.name {
-                return Err(BrokerError::precondition_failed(format!(
-                    "user_id property set to '{uid}' but authenticated user was '{}'",
-                    self.user.name
-                )));
-            }
+        if let Some(uid) = &properties.user_id
+            && *uid != self.user.name
+        {
+            return Err(BrokerError::precondition_failed(format!(
+                "user_id property set to '{uid}' but authenticated user was '{}'",
+                self.user.name
+            )));
         }
         if self.chan(ch).tx.is_some() {
             // Fail early on a missing exchange, as RabbitMQ does.
@@ -1531,10 +1531,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             }
         }
         for id in consumer_ids {
-            if let Some(cr) = self.consumers.remove(&id) {
-                if !queues.contains(&cr.queue) {
-                    queues.push(cr.queue);
-                }
+            if let Some(cr) = self.consumers.remove(&id)
+                && !queues.contains(&cr.queue)
+            {
+                queues.push(cr.queue);
             }
         }
         for q in queues {

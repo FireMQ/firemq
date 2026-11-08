@@ -126,22 +126,22 @@ impl QueueConfig {
         self.expires = min(self.expires, num("expires"));
         self.max_length = min(self.max_length, num("max-length"));
         self.max_length_bytes = min(self.max_length_bytes, num("max-length-bytes"));
-        if self.dead_letter_exchange.is_none() {
-            if let Some(dlx) = def.get("dead-letter-exchange").and_then(|v| v.as_str()) {
-                self.dead_letter_exchange = Some(dlx.to_string());
-                if let Some(rk) = def.get("dead-letter-routing-key").and_then(|v| v.as_str()) {
-                    self.dead_letter_routing_key = Some(rk.to_string());
-                }
+        if self.dead_letter_exchange.is_none()
+            && let Some(dlx) = def.get("dead-letter-exchange").and_then(|v| v.as_str())
+        {
+            self.dead_letter_exchange = Some(dlx.to_string());
+            if let Some(rk) = def.get("dead-letter-routing-key").and_then(|v| v.as_str()) {
+                self.dead_letter_routing_key = Some(rk.to_string());
             }
         }
-        if let Some(o) = def.get("overflow").and_then(|v| v.as_str()) {
-            if self.overflow == Overflow::DropHead {
-                self.overflow = match o {
-                    "reject-publish" => Overflow::RejectPublish,
-                    "reject-publish-dlx" => Overflow::RejectPublishDlx,
-                    _ => Overflow::DropHead,
-                };
-            }
+        if let Some(o) = def.get("overflow").and_then(|v| v.as_str())
+            && self.overflow == Overflow::DropHead
+        {
+            self.overflow = match o {
+                "reject-publish" => Overflow::RejectPublish,
+                "reject-publish-dlx" => Overflow::RejectPublishDlx,
+                _ => Overflow::DropHead,
+            };
         }
     }
 

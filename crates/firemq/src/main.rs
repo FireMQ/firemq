@@ -29,6 +29,15 @@ struct Args {
     /// TLS private key (PEM).
     #[arg(long, env = "FIREMQ_TLS_KEY", requires = "tls_cert")]
     tls_key: Option<PathBuf>,
+    /// Directory for durable queues, messages and definitions.
+    #[arg(long, env = "FIREMQ_DATA_DIR", default_value = "firemq-data")]
+    data_dir: PathBuf,
+    /// Keep everything in memory; nothing survives a restart. Handy for tests and CI.
+    #[arg(long, env = "FIREMQ_EPHEMERAL")]
+    ephemeral: bool,
+    /// Sync persistent messages to disk before confirming them.
+    #[arg(long, env = "FIREMQ_FSYNC", default_value_t = true, action = clap::ArgAction::Set)]
+    fsync: bool,
     /// Users who may only connect from localhost, comma-separated. Empty allows everyone.
     #[arg(long, env = "FIREMQ_LOOPBACK_USERS", default_value = "guest")]
     loopback_users: String,
@@ -54,8 +63,10 @@ async fn main() -> std::io::Result<()> {
         fires: Some(args.fires),
         http: Some(args.http),
         tls,
+        data_dir: (!args.ephemeral).then(|| args.data_dir.clone()),
         ..Default::default()
     };
+    config.store.fsync = args.fsync;
     config.broker.loopback_users = args
         .loopback_users
         .split(',')
@@ -65,6 +76,17 @@ async fn main() -> std::io::Result<()> {
         .collect();
     let server = Server::start(config).await?;
     println!("FireMQ {} is running", env!("CARGO_PKG_VERSION"));
+    if args.ephemeral {
+        println!("  Storage    in memory (--ephemeral)");
+    } else {
+        let r = server.recovery();
+        println!(
+            "  Storage    {} ({} queues, {} messages recovered)",
+            args.data_dir.display(),
+            r.queues,
+            r.messages
+        );
+    }
     if let Some(a) = server.amqp_addr() {
         println!("  AMQP       amqp://guest:guest@localhost:{}", a.port());
     }

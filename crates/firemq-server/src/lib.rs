@@ -16,6 +16,7 @@ pub mod tls;
 
 use std::future::Future;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,6 +26,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 
+pub use firemq_store::StoreConfig;
 pub use native::NativeConfig;
 pub use tls::{IoStream, TlsConfig};
 
@@ -43,6 +45,9 @@ pub struct ServerConfig {
     pub http: Option<SocketAddr>,
     /// Certificate and key for the TLS listeners.
     pub tls: Option<TlsConfig>,
+    /// Where durable data lives. `None` keeps everything in memory.
+    pub data_dir: Option<PathBuf>,
+    pub store: StoreConfig,
     pub broker: BrokerConfig,
     pub amqp_config: AmqpConfig,
     pub native_config: NativeConfig,
@@ -60,6 +65,8 @@ impl Default for ServerConfig {
             fires: Some(SocketAddr::from(([0, 0, 0, 0], 5674))),
             http: Some(SocketAddr::from(([0, 0, 0, 0], 15672))),
             tls: None,
+            data_dir: None,
+            store: StoreConfig::default(),
             broker: BrokerConfig::default(),
             amqp_config: AmqpConfig::default(),
             native_config: NativeConfig::default(),
@@ -84,6 +91,7 @@ pub struct Server {
     broker: Broker,
     addrs: Addresses,
     tasks: Vec<JoinHandle<()>>,
+    recovery: firemq_core::RecoveryReport,
 }
 
 type BoxStream = Box<dyn IoStream>;
@@ -139,19 +147,36 @@ where
 }
 
 impl Server {
-    /// Binds every configured listener and starts serving.
+    /// Opens the data directory (if any), recovers durable state, binds every configured
+    /// listener and starts serving.
     pub async fn start(config: ServerConfig) -> std::io::Result<Server> {
-        let broker = Broker::new(config.broker.clone(), Arc::new(MemoryStore));
+        let broker = match &config.data_dir {
+            Some(dir) => {
+                let store = firemq_store::DiskStore::open(dir, config.store.clone())?;
+                Broker::new(config.broker.clone(), Arc::new(store))
+            }
+            None => Broker::new(config.broker.clone(), Arc::new(MemoryStore)),
+        };
         Server::start_with(config, broker).await
     }
 
-    /// Starts listeners for an existing broker.
+    /// Recovers state for an existing broker and starts listeners.
     pub async fn start_with(config: ServerConfig, broker: Broker) -> std::io::Result<Server> {
+        let recovery = broker
+            .recover()
+            .await
+            .map_err(|e| std::io::Error::other(e.text))?;
         broker.ensure_default_user(&config.default_user, &config.default_pass);
+        let mut tasks = Vec::new();
+        if broker.store().is_durable() {
+            broker
+                .save_definitions()
+                .map_err(|e| std::io::Error::other(format!("cannot write definitions: {e}")))?;
+            tasks.push(broker.spawn_definitions_writer());
+        }
         let acceptor = config.tls.as_ref().map(tls::acceptor).transpose()?;
         let amqp = Arc::new(config.amqp_config.clone());
         let native = Arc::new(config.native_config.clone());
-        let mut tasks = Vec::new();
         let mut addrs = Addresses::default();
 
         let amqp_listeners = [
@@ -223,11 +248,17 @@ impl Server {
             broker,
             addrs,
             tasks,
+            recovery,
         })
     }
 
     pub fn broker(&self) -> &Broker {
         &self.broker
+    }
+
+    /// What startup recovery restored from disk.
+    pub fn recovery(&self) -> &firemq_core::RecoveryReport {
+        &self.recovery
     }
 
     /// Every bound address. Useful when a configured port was 0.
@@ -260,5 +291,10 @@ impl Server {
             t.abort();
         }
         self.broker.shutdown().await;
+        if self.broker.store().is_durable()
+            && let Err(e) = self.broker.save_definitions()
+        {
+            tracing::error!(error = %e, "failed to save definitions at shutdown");
+        }
     }
 }

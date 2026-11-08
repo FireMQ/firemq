@@ -18,6 +18,7 @@
 pub mod auth;
 mod broker;
 mod confirm;
+mod definitions;
 mod error;
 mod exchange;
 pub mod json;
@@ -30,6 +31,7 @@ mod vhost;
 pub use auth::{Access, Permission, User, Users};
 pub use broker::{Broker, BrokerConfig, ConnectionInfo, ConnectionRegistration};
 pub use confirm::{ConnEvent, Ticket};
+pub use definitions::RecoveryReport;
 pub use error::{BrokerError, Result};
 pub use exchange::{Binding, Destination, Exchange, ExchangeKind, ExchangeOptions};
 pub use firemq_amqp_codec::{BasicProperties, FieldTable, LongString, Value};
@@ -39,5 +41,5 @@ pub use queue::{
     QueueOptions, QueueShared, QueueStats, SharedLimit,
 };
 pub use routing::{TopicTrie, headers_match};
-pub use storage::{Loc, MemoryStore, QueueStore, Recovered, Store};
+pub use storage::{Loc, MemoryQueueStore, MemoryStore, QueueStore, Recovered, Store};
 pub use vhost::{Policy, QueueDeclared, Topology, VHost};

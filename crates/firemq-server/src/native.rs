@@ -802,18 +802,18 @@ impl Conn {
 
     async fn publish(&mut self, p: proto::Publish, body: Bytes) -> Res {
         let result = self.route_and_publish(&p, body).await;
-        if let Err(e) = &result {
-            if p.seq > 0 {
-                // A publish that failed before reaching a queue is rejected.
-                self.complete(p.seq, false);
-                self.send(Command::Confirm(proto::Confirm {
-                    seq: Some(p.seq),
-                    nack: true,
-                    code: e.code,
-                    msg: e.text.clone(),
-                    ..Default::default()
-                }));
-            }
+        if let Err(e) = &result
+            && p.seq > 0
+        {
+            // A publish that failed before reaching a queue is rejected.
+            self.complete(p.seq, false);
+            self.send(Command::Confirm(proto::Confirm {
+                seq: Some(p.seq),
+                nack: true,
+                code: e.code,
+                msg: e.text.clone(),
+                ..Default::default()
+            }));
         }
         result
     }
@@ -824,13 +824,13 @@ impl Conn {
             self.max_seq = self.max_seq.max(p.seq);
         }
         self.check(Access::Write, "exchange", &p.exchange)?;
-        if let Some(uid) = &p.props.user_id {
-            if *uid != self.user.name {
-                return Err(BrokerError::precondition_failed(format!(
-                    "user_id property set to '{uid}' but authenticated user was '{}'",
-                    self.user.name
-                )));
-            }
+        if let Some(uid) = &p.props.user_id
+            && *uid != self.user.name
+        {
+            return Err(BrokerError::precondition_failed(format!(
+                "user_id property set to '{uid}' but authenticated user was '{}'",
+                self.user.name
+            )));
         }
         let props = convert::to_basic(&p.props, &p.headers, p.persistent);
         let queues = self
