@@ -1,0 +1,354 @@
+name: Publish
+
+# Publishes a release to the package registries: the Rust crates to crates.io, the Python
+# binding to PyPI and the Ruby binding to RubyGems. The Dart package is published by hand
+# (see RELEASING.md), and the C library and Swift XCFramework are attached to the GitHub
+# release by release.yml.
+#
+# Runs when a version tag is pushed, and by hand for an existing tag, for example after setting
+# up a registry. A registry is skipped until it is set up, and versions already on a registry
+# are skipped, so a run can be repeated. On pull requests that change packaging, it builds and
+# tests every package without publishing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish, for example v0.1.0
+        required: true
+  pull_request:
+    paths:
+      - .github/workflows/publish.yml
+      - .github/workflows/native.yml
+      - bindings/python/**
+      - bindings/ruby/**
+      - crates/firemq-client-ffi/**
+      - "**/Cargo.toml"
+      - Cargo.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    # Explicit bash adds -o pipefail, which the `| tee` pipelines below rely on.
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  # Empty on pull requests, where nothing is published.
+  TAG: ${{ github.event_name != 'pull_request' && (inputs.tag || github.ref_name) || '' }}
+
+jobs:
+  versions:
+    name: Check versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Every package has the same version, and it matches the tag
+        run: |
+          cargo=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          python=$(sed -n 's/^version = "\(.*\)"/\1/p' bindings/python/pyproject.toml)
+          gem=$(sed -n 's/^ *s.version = "\(.*\)"/\1/p' bindings/ruby/firemq.gemspec)
+          ruby=$(sed -n 's/^ *VERSION = "\(.*\)"/\1/p' bindings/ruby/lib/firemq.rb)
+          dart=$(sed -n 's/^version: \(.*\)/\1/p' bindings/dart/pubspec.yaml)
+          echo "Cargo $cargo, Python $python, gem $gem, Ruby VERSION $ruby, Dart $dart, tag ${TAG:-none}"
+          for v in "$python" "$gem" "$ruby" "$dart"; do
+            [ "$v" = "$cargo" ] || { echo "::error::Package versions differ"; exit 1; }
+          done
+          if [ -n "$TAG" ] && [ "$TAG" != "v$cargo" ]; then
+            echo "::error::Tag $TAG does not match version $cargo"
+            exit 1
+          fi
+
+  crates:
+    name: crates.io
+    needs: versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Publish the crates that are not on crates.io yet
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$TAG" ]; then
+            cargo publish --workspace --locked --dry-run
+            exit 0
+          fi
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::notice::CARGO_REGISTRY_TOKEN is not set; skipping crates.io"
+            exit 0
+          fi
+          # crates.io limits how fast new crates can be published, so retry after its window.
+          for attempt in 1 2 3 4 5 6; do
+            exclude=()
+            remaining=0
+            for crate in $(cargo metadata --no-deps --format-version 1 |
+                jq -r '.packages[] | select(.publish != []) | .name + "@" + .version'); do
+              if curl -fs -o /dev/null -A "FireMQ release (https://github.com/FireMQ/firemq)" \
+                  "https://crates.io/api/v1/crates/${crate%@*}/${crate#*@}"; then
+                echo "${crate} is already on crates.io"
+                exclude+=(--exclude "${crate%@*}")
+              else
+                remaining=$((remaining + 1))
+              fi
+            done
+            if [ "$remaining" = 0 ]; then
+              echo "Every crate is on crates.io."
+              exit 0
+            fi
+            if cargo publish --workspace --locked "${exclude[@]}" 2>&1 | tee publish.log; then
+              exit 0
+            fi
+            if grep -qiE '429|too many' publish.log; then
+              echo "crates.io is rate-limiting new crates; retrying in 11 minutes"
+              sleep 660
+            else
+              exit 1
+            fi
+          done
+          exit 1
+
+  ffi:
+    name: Native library
+    needs: versions
+    uses: ./.github/workflows/native.yml
+    with:
+      ref: ${{ inputs.tag || github.sha }}
+
+  broker:
+    name: Build the broker for tests
+    needs: versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p firemq
+      - uses: actions/upload-artifact@v4
+        with:
+          name: publish-broker
+          path: target/debug/firemq
+          retention-days: 3
+
+  wheels:
+    name: Python wheel (${{ matrix.target }})
+    needs: versions
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, manylinux: "2014" }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, manylinux: "2014" }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      # maturin-action installs its own toolchain; use the one rust-toolchain.toml pins.
+      - id: toolchain
+        shell: bash
+        run: echo "channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          rust-toolchain: ${{ steps.toolchain.outputs.channel }}
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel-${{ matrix.target }}
+          path: bindings/python/dist/*.whl
+
+  sdist:
+    name: Python sdist
+    needs: versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-sdist
+          path: bindings/python/dist/*.tar.gz
+
+  test-wheel:
+    name: Test the Linux wheel (Python ${{ matrix.python }})
+    needs: [wheels, broker]
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheel-x86_64-unknown-linux-gnu
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: publish-broker
+          path: bin
+      - name: Start FireMQ
+        run: |
+          chmod +x bin/firemq
+          bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the wheel and run the tests against it
+        run: |
+          python -m venv venv
+          venv/bin/pip install --quiet dist/*.whl pytest
+          # Run from the tests directory, so `import firemq` finds the installed wheel.
+          cd bindings/python/tests && ../../../venv/bin/python -m pytest -v -p no:cacheprovider .
+      - if: always()
+        run: tail -n 50 firemq.log
+
+  pypi:
+    name: PyPI
+    needs: [wheels, sdist, test-wheel]
+    # Needs a trusted publisher on PyPI for this workflow and the "pypi" environment; set the
+    # repository variable PYPI_TRUSTED_PUBLISHER to "true" once it exists.
+    if: github.event_name != 'pull_request' && vars.PYPI_TRUSTED_PUBLISHER == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: python-*
+          merge-multiple: true
+          path: dist
+      - run: ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  gems:
+    name: Ruby gems
+    needs: ffi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ffi-*
+          merge-multiple: true
+          path: ffi
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - name: Build one gem per platform, each with its native library
+        working-directory: bindings/ruby
+        run: |
+          build() { # archive, library file in it, RubyGems platform
+            rm -f lib/firemq/*.so lib/firemq/*.dylib lib/firemq/*.dll
+            dir=$(mktemp -d)
+            case "$1" in
+              *.zip) unzip -q "$GITHUB_WORKSPACE/ffi/$1" -d "$dir" ;;
+              *) tar -xzf "$GITHUB_WORKSPACE/ffi/$1" -C "$dir" ;;
+            esac
+            cp "$dir"/*/lib/"$2" lib/firemq/
+            FIREMQ_GEM_PLATFORM="$3" gem build firemq.gemspec
+          }
+          build firemq-ffi-x86_64-unknown-linux-gnu.tar.gz libfiremq_client_ffi.so x86_64-linux
+          build firemq-ffi-aarch64-unknown-linux-gnu.tar.gz libfiremq_client_ffi.so aarch64-linux
+          build firemq-ffi-aarch64-apple-darwin.tar.gz libfiremq_client_ffi.dylib arm64-darwin
+          build firemq-ffi-x86_64-apple-darwin.tar.gz libfiremq_client_ffi.dylib x86_64-darwin
+          build firemq-ffi-x86_64-pc-windows-msvc.zip firemq_client_ffi.dll x64-mingw-ucrt
+          rm -f lib/firemq/*.so lib/firemq/*.dylib lib/firemq/*.dll
+          for gem in *.gem; do echo "$gem"; tar -xOf "$gem" data.tar.gz | tar -tz; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ruby-gems
+          path: bindings/ruby/*.gem
+
+  test-gem:
+    name: Test the Linux gem
+    needs: [gems, broker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruby-gems
+          path: gems
+      - uses: actions/download-artifact@v4
+        with:
+          name: publish-broker
+          path: bin
+      - name: Start FireMQ
+        run: |
+          chmod +x bin/firemq
+          bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.1"
+      - name: Install the gem and run the tests against it
+        run: |
+          gem install --no-document gems/firemq-*-x86_64-linux.gem minitest
+          # Without -Ilib, `require "firemq"` loads the installed gem and its library.
+          ruby -Ibindings/ruby/test bindings/ruby/test/test_firemq.rb
+      - if: always()
+        run: tail -n 50 firemq.log
+
+  rubygems:
+    name: RubyGems
+    needs: [gems, test-gem]
+    # Needs a trusted publisher on RubyGems for this workflow and the "rubygems" environment;
+    # set the repository variable RUBYGEMS_TRUSTED_PUBLISHER to "true" once it exists.
+    if: github.event_name != 'pull_request' && vars.RUBYGEMS_TRUSTED_PUBLISHER == 'true'
+    runs-on: ubuntu-latest
+    environment: rubygems
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ruby-gems
+          path: gems
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      - name: Push the gems that are not on RubyGems yet
+        run: |
+          for gem in gems/*.gem; do
+            if gem push "$gem" 2>&1 | tee push.log; then continue; fi
+            grep -q "Repushing of gem versions is not allowed" push.log || exit 1
+            echo "$gem is already on RubyGems"
+          done
