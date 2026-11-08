@@ -13,20 +13,27 @@ categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 axum.workspace = true
+base64.workspace = true
 bytes.workspace = true
 firemq-amqp.workspace = true
 firemq-core.workspace = true
 firemq-proto.workspace = true
 firemq-store.workspace = true
 futures.workspace = true
+parking_lot.workspace = true
 rustls.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sysinfo.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
 tokio-rustls.workspace = true
 rcgen.workspace = true
 tempfile.workspace = true

@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        client: [pika, amqplib, amqp091-go, java, dotnet, amqp091-go-upstream]
+        client: [pika, amqplib, amqp091-go, java, dotnet, amqp091-go-upstream, rabbitmqadmin]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
@@ -69,8 +69,8 @@ jobs:
       - name: Start FireMQ
         run: |
           chmod +x firemq
-          ./firemq > firemq.log 2>&1 &
-          for i in $(seq 1 50); do nc -z 127.0.0.1 5672 && break; sleep 0.1; done
+          ./firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 50); do nc -z 127.0.0.1 15672 && break; sleep 0.1; done
       - if: matrix.client == 'pika'
         uses: astral-sh/setup-uv@v6
       - if: matrix.client == 'pika'
@@ -117,6 +117,9 @@ jobs:
             echo "::endgroup::"
           fi
           exit $status
+      - if: matrix.client == 'rabbitmqadmin'
+        name: RabbitMQ's rabbitmqadmin against the management API
+        run: compat/rabbitmqadmin.sh
       - if: matrix.client == 'java'
         uses: actions/setup-java@v4
         with:

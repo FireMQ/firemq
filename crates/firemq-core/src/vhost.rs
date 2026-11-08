@@ -469,6 +469,7 @@ impl VHost {
             arguments,
             declared_config: config,
             stats: Default::default(),
+            consumers: Default::default(),
             tx,
         });
         let actor = Actor::new(

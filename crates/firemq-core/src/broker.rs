@@ -87,6 +87,23 @@ pub struct NodeStats {
     pub disk_alarm: AtomicBool,
 }
 
+/// Broker-wide message counters, for metrics.
+#[derive(Debug, Default)]
+pub struct Counters {
+    /// Messages received from publishers.
+    pub published: AtomicU64,
+    /// Messages that matched no queue.
+    pub unroutable: AtomicU64,
+    /// Messages sent to consumers or returned by get.
+    pub delivered: AtomicU64,
+    /// Deliveries acknowledged by clients.
+    pub acked: AtomicU64,
+    /// Publisher confirms sent.
+    pub confirmed: AtomicU64,
+    /// Connections opened since start.
+    pub connections_opened: AtomicU64,
+}
+
 /// Keeps a connection listed until dropped.
 pub struct ConnectionRegistration {
     broker: Broker,
@@ -107,6 +124,7 @@ struct Inner {
     started_at: u64,
     blocked: AtomicBool,
     node: NodeStats,
+    counters: Counters,
 }
 
 /// The broker: the set of virtual hosts plus shared services. Cheap to clone.
@@ -141,6 +159,7 @@ impl Broker {
                 started_at: now_ms(),
                 blocked: AtomicBool::new(false),
                 node: NodeStats::default(),
+                counters: Counters::default(),
             }),
         };
         broker.add_vhost("/");
@@ -251,6 +270,10 @@ impl Broker {
     ) -> (Arc<ConnectionInfo>, ConnectionRegistration) {
         let id = info.id;
         let info = Arc::new(info);
+        self.inner
+            .counters
+            .connections_opened
+            .fetch_add(1, Ordering::Relaxed);
         self.inner.connections.lock().insert(id, info.clone());
         if self.is_blocked() {
             let _ = info.events.send(ConnEvent::Blocked(true));
@@ -270,6 +293,11 @@ impl Broker {
 
     pub fn connection(&self, id: u64) -> Option<Arc<ConnectionInfo>> {
         self.inner.connections.lock().get(&id).cloned()
+    }
+
+    /// Broker-wide message counters.
+    pub fn counters(&self) -> &Counters {
+        &self.inner.counters
     }
 
     /// Resource usage and alarm state.
