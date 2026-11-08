@@ -44,10 +44,11 @@ xcodebuild -create-xcframework \
   -library "$out/ios-simulator/$lib" -headers "$out/headers" \
   -output "$out/FireMQFFI.xcframework"
 
-(cd "$out" && rm -f FireMQFFI.xcframework.zip &&
-  ditto -c -k --sequesterRsrc --keepParent FireMQFFI.xcframework FireMQFFI.xcframework.zip)
+cd "$out"
+rm -f FireMQFFI.xcframework.zip
+ditto -c -k --sequesterRsrc --keepParent FireMQFFI.xcframework FireMQFFI.xcframework.zip
 # SwiftPM's checksum for a binaryTarget is the SHA-256 of the zip.
-shasum -a 256 "$out/FireMQFFI.xcframework.zip" | cut -d' ' -f1 > "$out/FireMQFFI.xcframework.zip.sha256"
+shasum -a 256 FireMQFFI.xcframework.zip > FireMQFFI.xcframework.zip.sha256
 
 echo "built $out/FireMQFFI.xcframework"
-echo "built $out/FireMQFFI.xcframework.zip (checksum $(cat "$out/FireMQFFI.xcframework.zip.sha256"))"
+echo "built $out/FireMQFFI.xcframework.zip, checksum $(cut -d' ' -f1 FireMQFFI.xcframework.zip.sha256)"

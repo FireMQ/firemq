@@ -1,0 +1,82 @@
+name: Native library
+
+# Builds libfiremq_client_ffi, the library behind the C, Ruby and Dart bindings, for each
+# release platform and packages it with the C header as firemq-ffi-<target>.tar.gz (.zip on
+# Windows). The release and publish workflows call it.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        type: string
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # cargo-zigbuild links against glibc 2.17, so the library loads on old distributions too.
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest, glibc: "2.17" }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest, glibc: "2.17" }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      # Link the C runtime statically, so the DLL does not need the Visual C++ redistributable.
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      # rust-toolchain.toml pins the toolchain, so add the target to that one.
+      - run: rustup target add ${{ matrix.target }}
+      - name: Build (Linux)
+        if: matrix.glibc
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zigbuild"
+          "$RUNNER_TEMP/zigbuild/bin/pip" install --quiet cargo-zigbuild ziglang
+          # cargo-zigbuild runs `python3 -m ziglang`, so the venv's python must come first.
+          export PATH="$RUNNER_TEMP/zigbuild/bin:$PATH"
+          cargo zigbuild --release --locked -p firemq-client-ffi --target ${{ matrix.target }}.${{ matrix.glibc }}
+      - name: Build
+        if: '!matrix.glibc'
+        run: cargo build --release --locked -p firemq-client-ffi --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          name=firemq-ffi-$TARGET
+          dir=target/$TARGET/release
+          mkdir -p "$name/include" "$name/lib"
+          cp bindings/c/firemq.h "$name/include/"
+          cp LICENSE bindings/c/README.md "$name/"
+          case "$TARGET" in
+            *windows*) cp "$dir/firemq_client_ffi.dll" "$dir/firemq_client_ffi.dll.lib" "$dir/firemq_client_ffi.lib" "$name/lib/" ;;
+            *apple*) cp "$dir/libfiremq_client_ffi.dylib" "$dir/libfiremq_client_ffi.a" "$name/lib/" ;;
+            *) cp "$dir/libfiremq_client_ffi.so" "$dir/libfiremq_client_ffi.a" "$name/lib/" ;;
+          esac
+          if [[ "$TARGET" == *windows* ]]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            sha256sum "$name.zip" > "$name.zip.sha256"
+          else
+            tar -czf "$name.tar.gz" "$name"
+            shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          fi
+          ls -l "$name"/lib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffi-${{ matrix.target }}
+          path: |
+            firemq-ffi-*.tar.gz
+            firemq-ffi-*.zip
+            firemq-ffi-*.sha256

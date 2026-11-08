@@ -76,15 +76,41 @@ jobs:
           name: docker-${{ matrix.arch }}
           path: dist
 
+  ffi:
+    name: Native library
+    uses: ./.github/workflows/native.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+  xcframework:
+    name: Swift XCFramework
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - run: bindings/swift/build-xcframework.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-xcframework
+          path: |
+            bindings/swift/build/FireMQFFI.xcframework.zip
+            bindings/swift/build/FireMQFFI.xcframework.zip.sha256
+
   release:
     name: GitHub Release
-    needs: build
+    needs: [build, ffi, xcframework]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
+          merge-multiple: true
+          path: assets
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ffi-*
           merge-multiple: true
           path: assets
       - name: Create or update the release
