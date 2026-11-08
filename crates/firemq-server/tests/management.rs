@@ -407,3 +407,17 @@ async fn connections_consumers_metrics_and_health() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert!(c.is_closed());
 }
+
+#[tokio::test]
+async fn the_web_ui_is_served_at_the_root() {
+    let s = start().await;
+    let anonymous = Api {
+        auth: None,
+        ..Api::new(&s, "guest", "guest")
+    };
+    let r = anonymous.get("/").await;
+    assert_eq!(r.status, 200);
+    let html = r.body.as_str().unwrap();
+    assert!(html.contains("<title>FireMQ</title>"));
+    assert!(html.contains("/api"), "the UI talks to the management API");
+}

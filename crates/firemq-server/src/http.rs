@@ -14,6 +14,7 @@ use crate::{metrics, mgmt};
 
 pub(crate) fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(ui))
         .route("/fire", get(fire_ws))
         .route("/metrics", get(metrics::metrics))
         .route("/healthz", get(healthz))
@@ -28,6 +29,14 @@ async fn fire_ws(
 ) -> impl IntoResponse {
     ws.protocols(["firemq.v1"])
         .on_upgrade(move |socket| serve_ws(s.broker, s.native, socket, peer, s.local, s.tls))
+}
+
+/// The management UI: one self-contained page compiled into the binary.
+async fn ui() -> impl IntoResponse {
+    (
+        [(axum::http::header::CACHE_CONTROL, "no-cache")],
+        axum::response::Html(include_str!("../ui/index.html")),
+    )
 }
 
 /// Unauthenticated liveness probe for containers and load balancers.
