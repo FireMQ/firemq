@@ -9,6 +9,12 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 pub use firemq::builder;
 
+// The static Linux builds use musl, whose allocator slows down sharply when the broker's
+// threads allocate concurrently. Glibc, macOS and Windows builds keep the system allocator.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// FireMQ: a lean, fast, RabbitMQ-compatible message broker.
 ///
 /// Run `firemq` with no arguments to start a broker with zero configuration.
