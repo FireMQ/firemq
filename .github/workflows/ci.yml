@@ -69,8 +69,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-musl
+      # rust-toolchain.toml pins the toolchain, so add the target to that one.
+      - run: rustup target add x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
       # The same build as the release workflow, so a broken release build shows up here.
