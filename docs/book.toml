@@ -1,0 +1,12 @@
+[book]
+title = "FireMQ"
+description = "A lean, fast, RabbitMQ-compatible message broker"
+authors = ["The FireMQ Authors"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/FireMQ/firemq"
+edit-url-template = "https://github.com/FireMQ/firemq/edit/main/docs/{path}"
+default-theme = "light"
+preferred-dark-theme = "coal"

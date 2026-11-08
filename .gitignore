@@ -13,3 +13,5 @@ compat/java/lib/
 compat/dotnet/bin/
 compat/dotnet/obj/
 compat/node/package-lock.json
+/examples/node/node_modules
+examples/node/package-lock.json
