@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Packages the Rust library as FireMQFFI.xcframework for macOS (arm64 + x86_64), iOS and the
-# iOS simulator, so apps can depend on the package without a Rust toolchain.
+# iOS simulator, so apps can depend on the package without a Rust toolchain. Also writes
+# FireMQFFI.xcframework.zip and its SwiftPM checksum, which the release attaches.
 #
 # Needs Xcode: `xcodebuild -create-xcframework` is not part of the Command Line Tools.
 # CI runs it on macos-latest. To use the result, replace the FireMQFFI systemLibrary target
@@ -8,6 +9,11 @@
 #
 #   .binaryTarget(name: "FireMQFFI", path: "build/FireMQFFI.xcframework")
 set -euo pipefail
+
+# Build for the oldest versions Package.swift supports. Otherwise the C code in the library
+# (from ring) targets the SDK's version, and the linker warns that it is newer than the app's.
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
 
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
@@ -43,4 +49,11 @@ xcodebuild -create-xcframework \
   -library "$out/ios-simulator/$lib" -headers "$out/headers" \
   -output "$out/FireMQFFI.xcframework"
 
+cd "$out"
+rm -f FireMQFFI.xcframework.zip
+ditto -c -k --sequesterRsrc --keepParent FireMQFFI.xcframework FireMQFFI.xcframework.zip
+# SwiftPM's checksum for a binaryTarget is the SHA-256 of the zip.
+shasum -a 256 FireMQFFI.xcframework.zip > FireMQFFI.xcframework.zip.sha256
+
 echo "built $out/FireMQFFI.xcframework"
+echo "built $out/FireMQFFI.xcframework.zip, checksum $(cut -d' ' -f1 FireMQFFI.xcframework.zip.sha256)"

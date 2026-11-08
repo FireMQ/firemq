@@ -3,6 +3,14 @@
 A Python client for [FireMQ](https://github.com/FireMQ/firemq), built on the Rust client
 with [UniFFI](https://mozilla.github.io/uniffi-rs/) and [maturin](https://www.maturin.rs/).
 
+```bash
+pip install firemq
+```
+
+Wheels include the native library for Linux (x86-64 and arm64, glibc 2.17 or later), macOS
+(Apple silicon and Intel, 11 or later) and Windows x64, for Python 3.9 and later. On other
+platforms, pip builds the package from source, which needs a Rust toolchain.
+
 ```python
 import firemq
 

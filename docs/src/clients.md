@@ -32,9 +32,14 @@ Connect with the usual URL, for example `amqp://guest:guest@localhost:5672/`. Se
 | .NET | [FireMQ/firemq-dotnet](https://github.com/FireMQ/firemq-dotnet) | `FireMQ.Client` on NuGet |
 | Elixir | [FireMQ/firemq-elixir](https://github.com/FireMQ/firemq-elixir) | `firemq` on Hex |
 | PHP | [FireMQ/firemq-php](https://github.com/FireMQ/firemq-php) | `firemq/firemq` on Packagist |
-| Python, Kotlin, Swift, Ruby, Dart, C | [`bindings/`](https://github.com/FireMQ/firemq/tree/main/bindings), over the Rust SDK | Build from source for now |
+| Python | [`bindings/python`](https://github.com/FireMQ/firemq/tree/main/bindings/python) | `firemq` on PyPI |
+| Ruby | [`bindings/ruby`](https://github.com/FireMQ/firemq/tree/main/bindings/ruby) | `firemq` on RubyGems |
+| Swift: macOS, iOS | [FireMQ/firemq-swift](https://github.com/FireMQ/firemq-swift) | Swift package `https://github.com/FireMQ/firemq-swift` |
+| Dart | [`bindings/dart`](https://github.com/FireMQ/firemq/tree/main/bindings/dart) | `firemq` on pub.dev, with the C library from a release |
+| C, C++ | [`bindings/c`](https://github.com/FireMQ/firemq/tree/main/bindings/c) | `firemq-ffi-<target>` archives on the [releases page](https://github.com/FireMQ/firemq/releases) |
+| Kotlin on Android | [`bindings/kotlin`](https://github.com/FireMQ/firemq/tree/main/bindings/kotlin) | Build from source; on the JVM, use `firemq-kotlin` |
 
-Every SDK runs the [conformance suite](conformance.md) against a real broker in its CI. Packages are published to their registries starting with FireMQ v0.1.0; until then, install from the repositories.
+The Python, Ruby, Swift, Dart and C clients are [bindings](https://github.com/FireMQ/firemq/tree/main/bindings) over the Rust SDK, so they ship a native library. Every SDK runs the [conformance suite](conformance.md) against a real broker in its CI.
 
 Track progress in the [roadmap issue](https://github.com/FireMQ/firemq/issues/23).
 

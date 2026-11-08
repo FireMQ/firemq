@@ -54,6 +54,10 @@ fn force_close(server: &Server) {
     }
 }
 
+fn connection_ids(server: &Server) -> Vec<u64> {
+    server.broker().connections().iter().map(|c| c.id).collect()
+}
+
 fn transient() -> QueueOptions {
     QueueOptions {
         durable: false,
@@ -177,9 +181,17 @@ async fn unacked_messages_are_redelivered_after_a_forced_close() {
     // Wait until the second delivery is buffered in the subscription too.
     tokio::time::sleep(Duration::from_millis(100)).await;
 
+    let before = connection_ids(&server);
     force_close(&server);
-    until("the client notices", || !client.is_connected()).await;
-    until("the client reconnects", || client.is_connected()).await;
+    // The broker stays up, so the client can reconnect between two polls of is_connected().
+    // Wait for its new connection instead.
+    until("the client reconnects", || {
+        client.is_connected()
+            && connection_ids(&server)
+                .iter()
+                .any(|id| !before.contains(id))
+    })
+    .await;
 
     // The old copy's ack goes nowhere: the broker put the message back.
     first.ack().unwrap();

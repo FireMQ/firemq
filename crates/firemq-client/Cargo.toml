@@ -26,4 +26,5 @@ tracing.workspace = true
 webpki-roots.workspace = true
 
 [dev-dependencies]
-firemq-server.workspace = true
+# Path-only, so the published manifest drops it: firemq-server dev-depends on this crate too.
+firemq-server = { path = "../firemq-server" }

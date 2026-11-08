@@ -19,6 +19,9 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/FireMQ/firemq"
+Source = "https://github.com/FireMQ/firemq/tree/main/bindings/python"
+Changelog = "https://github.com/FireMQ/firemq/blob/main/CHANGELOG.md"
+Issues = "https://github.com/FireMQ/firemq/issues"
 
 [tool.maturin]
 bindings = "uniffi"

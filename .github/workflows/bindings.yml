@@ -143,7 +143,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: FireMQFFI.xcframework
-          path: bindings/swift/build/FireMQFFI.xcframework
+          path: |
+            bindings/swift/build/FireMQFFI.xcframework.zip
+            bindings/swift/build/FireMQFFI.xcframework.zip.sha256
           retention-days: 7
 
   ruby:
@@ -202,6 +204,9 @@ jobs:
           dart analyze --fatal-infos
           dart test
           dart run example/hello.dart
+      - name: The package is publishable
+        working-directory: bindings/dart
+        run: dart pub publish --dry-run
       - name: Conformance
         env:
           FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
