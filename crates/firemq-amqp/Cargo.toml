@@ -23,4 +23,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 amqprs = "2"
+async-trait = "0.1"
+clap.workspace = true
+url.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

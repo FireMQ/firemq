@@ -20,7 +20,7 @@ That one command starts a broker with:
 
 - **RabbitMQ compatibility.** Exchanges (direct, fanout, topic, headers), publisher confirms, mandatory returns, prefetch, TTL, dead-lettering, maximum length, priorities, single active consumer, transactions, policies, vhosts, users and permissions behave as they do in RabbitMQ. CI runs pika, amqplib, amqp091-go, the Java client, the .NET client and `rabbitmqadmin` against every change.
 - **Durability you can test.** Persistent messages are confirmed only after they are on disk. A test kills the broker with `kill -9` while it confirms publishes, restarts it, and checks that no confirmed message is missing.
-- **A small footprint.** One static binary with no runtime dependencies. An idle broker uses about 20 MB of memory.
+- **A small footprint.** One static binary with no runtime dependencies. An idle broker uses about 8 MB of memory on Linux.
 - **Tools for developers.** `firemq pub`, `firemq sub`, `firemq ctl`, `firemq bench` and `firemq doctor` work from the terminal, and the broker can run inside Rust tests as a library.
 
 ## What FireMQ is not (yet)

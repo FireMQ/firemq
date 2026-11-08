@@ -1,0 +1,24 @@
+FireMQ bench: 1 publisher(s), 1 consumer(s), 1024 B messages, persistent, 20s
+    1s  published    174951 msg/s  consumed    175730 msg/s
+    2s  published    177667 msg/s  consumed    177520 msg/s
+    3s  published    176861 msg/s  consumed    177112 msg/s
+    4s  published    175962 msg/s  consumed    176011 msg/s
+    5s  published    176859 msg/s  consumed    176803 msg/s
+    6s  published    176478 msg/s  consumed    176346 msg/s
+    7s  published    178196 msg/s  consumed    178174 msg/s
+    8s  published    174964 msg/s  consumed    175175 msg/s
+    9s  published    176685 msg/s  consumed    176747 msg/s
+   10s  published    177913 msg/s  consumed    177712 msg/s
+   11s  published    177872 msg/s  consumed    178016 msg/s
+   12s  published    176348 msg/s  consumed    176410 msg/s
+   13s  published    178204 msg/s  consumed    178051 msg/s
+   14s  published    178217 msg/s  consumed    177853 msg/s
+   15s  published    173422 msg/s  consumed    173938 msg/s
+   16s  published    177633 msg/s  consumed    177529 msg/s
+   17s  published    175886 msg/s  consumed    175991 msg/s
+   18s  published    176148 msg/s  consumed    176074 msg/s
+   19s  published    176543 msg/s  consumed    176205 msg/s
+   20s  published    177034 msg/s  consumed    177433 msg/s
+
+  published 176568 msg/s (180.8 MB/s), consumed 176566 msg/s
+  end-to-end latency  p50 0.84 ms  p95 2.55 ms  p99 3.10 ms  max 8.13 ms

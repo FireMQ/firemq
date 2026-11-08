@@ -9,6 +9,23 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 pub use firemq::builder;
 
+// The static Linux builds use musl, whose allocator slows down sharply when the broker's
+// threads allocate concurrently. Glibc, macOS and Windows builds keep the system allocator.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// Keeps the kernel from backing mimalloc's memory with 2 MiB transparent huge pages. Many
+/// Linux hosts, Docker Desktop's VM among them, enable them for every process, which made an
+/// idle broker use 17 MiB instead of 3 MiB. It must run before the runtime starts allocating.
+#[cfg(all(target_env = "musl", target_os = "linux"))]
+fn disable_transparent_huge_pages() {
+    // SAFETY: PR_SET_THP_DISABLE only sets a flag on this process and takes no pointers.
+    unsafe {
+        libc::prctl(libc::PR_SET_THP_DISABLE, 1, 0, 0, 0);
+    }
+}
+
 /// FireMQ: a lean, fast, RabbitMQ-compatible message broker.
 ///
 /// Run `firemq` with no arguments to start a broker with zero configuration.
@@ -66,6 +83,8 @@ fn runtime() -> tokio::runtime::Runtime {
 }
 
 fn main() {
+    #[cfg(all(target_env = "musl", target_os = "linux"))]
+    disable_transparent_huge_pages();
     let cli = Cli::parse();
     let result = match cli.command {
         None => serve::run(cli.serve),

@@ -31,3 +31,4 @@
 
 - [FireMQ protocol](protocol.md)
 - [SDK conformance suite](conformance.md)
+- [Benchmarks](benchmarks.md)
