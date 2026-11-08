@@ -10,6 +10,11 @@
 #   .binaryTarget(name: "FireMQFFI", path: "build/FireMQFFI.xcframework")
 set -euo pipefail
 
+# Build for the oldest versions Package.swift supports. Otherwise the C code in the library
+# (from ring) targets the SDK's version, and the linker warns that it is newer than the app's.
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
+
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 target="${CARGO_TARGET_DIR:-$root/target}"
