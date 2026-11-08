@@ -272,14 +272,22 @@ impl Actor {
                     let _ = r.send(());
                 }
             }
-            QueueCmd::Ack { seqs } => {
+            QueueCmd::Ack { owner, seqs } => {
                 for s in seqs {
-                    self.ack(s);
+                    if self.owned_by(s, owner) {
+                        self.ack(s);
+                    }
                 }
             }
-            QueueCmd::Reject { seqs, requeue } => {
+            QueueCmd::Reject {
+                owner,
+                seqs,
+                requeue,
+            } => {
                 for s in seqs {
-                    self.reject(s, requeue);
+                    if self.owned_by(s, owner) {
+                        self.reject(s, requeue);
+                    }
                 }
             }
             QueueCmd::Credit {
@@ -502,6 +510,10 @@ impl Actor {
                 self.retired.remove(&id);
             }
         }
+    }
+
+    fn owned_by(&self, seq: u64, owner: Owner) -> bool {
+        self.unacked.get(&seq).is_some_and(|u| u.owner == owner)
     }
 
     fn ack(&mut self, seq: u64) {
@@ -780,6 +792,8 @@ impl Actor {
         let c = &mut self.consumers[idx];
         permit.send(Delivery {
             consumer_id: c.id,
+            owner: c.owner,
+            no_ack: c.no_ack,
             queue: self.handle.clone(),
             seq: entry.seq,
             message,

@@ -38,3 +38,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --locked
+
+  compat:
+    name: RabbitMQ clients
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p firemq --locked
+      - name: Start FireMQ
+        run: |
+          ./target/debug/firemq --amqp 127.0.0.1:5672 > firemq.log 2>&1 &
+          sleep 1
+      - uses: astral-sh/setup-uv@v6
+      - name: pika
+        run: uv run --with pika --with pytest pytest compat/python -v
+      - name: Broker log
+        if: always()
+        run: cat firemq.log

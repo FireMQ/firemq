@@ -6,6 +6,7 @@ use parking_lot::{Mutex, RwLock};
 use tokio::sync::Notify;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::auth::{Permission, Users};
 use crate::confirm::ConnEvent;
 use crate::error::{BrokerError, Result};
 use crate::message::now_ms;
@@ -21,6 +22,8 @@ pub struct BrokerConfig {
     pub queue_inbox: usize,
     /// Message bytes each disk-backed queue keeps in memory before reading from disk.
     pub queue_cache_bytes: u64,
+    /// Users who may only connect from localhost, `guest` by default as in RabbitMQ.
+    pub loopback_users: Vec<String>,
 }
 
 impl Default for BrokerConfig {
@@ -33,6 +36,7 @@ impl Default for BrokerConfig {
             node_name: format!("firemq@{host}"),
             queue_inbox: 1024,
             queue_cache_bytes: 8 * 1024 * 1024,
+            loopback_users: vec!["guest".to_string()],
         }
     }
 }
@@ -86,6 +90,7 @@ impl Drop for ConnectionRegistration {
 
 struct Inner {
     ctx: Arc<Ctx>,
+    users: Users,
     vhosts: RwLock<BTreeMap<String, Arc<VHost>>>,
     connections: Mutex<BTreeMap<u64, Arc<ConnectionInfo>>>,
     started_at: u64,
@@ -117,6 +122,7 @@ impl Broker {
         let broker = Broker {
             inner: Arc::new(Inner {
                 ctx,
+                users: Users::default(),
                 vhosts: RwLock::new(BTreeMap::new()),
                 connections: Mutex::new(BTreeMap::new()),
                 started_at: now_ms(),
@@ -137,6 +143,37 @@ impl Broker {
 
     pub fn store(&self) -> &Arc<dyn Store> {
         &self.inner.ctx.store
+    }
+
+    pub fn users(&self) -> &Users {
+        &self.inner.users
+    }
+
+    /// Creates an administrator with full access to `/` when there are no users yet, like
+    /// RabbitMQ's first boot. Returns true when the user was created.
+    pub fn ensure_default_user(&self, name: &str, password: &str) -> bool {
+        if !self.inner.users.is_empty() {
+            return false;
+        }
+        self.inner
+            .users
+            .put(name, Some(password), vec!["administrator".to_string()]);
+        let _ = self
+            .inner
+            .users
+            .set_permission(name, "/", Permission::all());
+        self.inner.ctx.definitions_changed();
+        true
+    }
+
+    /// True when `user` may only connect from a loopback address.
+    pub fn is_loopback_only(&self, user: &str) -> bool {
+        self.config().loopback_users.iter().any(|u| u == user)
+    }
+
+    /// Marks durable definitions as changed, for persistence.
+    pub fn mark_definitions_changed(&self) {
+        self.inner.ctx.definitions_changed();
     }
 
     /// Milliseconds since the Unix epoch when the broker started.
@@ -187,6 +224,7 @@ impl Broker {
             }
         }
         v.shutdown(true).await;
+        self.inner.users.clear_vhost(name);
         self.inner.ctx.definitions_changed();
         Ok(())
     }

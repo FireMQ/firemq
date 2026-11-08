@@ -15,6 +15,7 @@
 //! - A publish creates a [`Ticket`]. Every queue that stores the message holds a clone and
 //!   drops it once the message is safe; the last drop sends the confirm.
 
+pub mod auth;
 mod broker;
 mod confirm;
 mod error;
@@ -26,6 +27,7 @@ mod routing;
 mod storage;
 mod vhost;
 
+pub use auth::{Access, Permission, User, Users};
 pub use broker::{Broker, BrokerConfig, ConnectionInfo, ConnectionRegistration};
 pub use confirm::{ConnEvent, Ticket};
 pub use error::{BrokerError, Result};

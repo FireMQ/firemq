@@ -17,3 +17,8 @@ name = "firemq"
 path = "src/main.rs"
 
 [dependencies]
+clap.workspace = true
+firemq-server.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

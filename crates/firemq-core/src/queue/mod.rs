@@ -126,6 +126,10 @@ pub struct ConsumerSpec {
 #[derive(Debug)]
 pub struct Delivery {
     pub consumer_id: u64,
+    /// The connection and channel the consumer belongs to.
+    pub owner: Owner,
+    /// True when the message counts as acknowledged already.
+    pub no_ack: bool,
     pub queue: QueueHandle,
     /// Queue-local sequence number; acknowledge with [`QueueHandle::ack`].
     pub seq: u64,
@@ -170,9 +174,11 @@ pub(crate) enum QueueCmd {
         reply: Option<oneshot::Sender<()>>,
     },
     Ack {
+        owner: Owner,
         seqs: Vec<u64>,
     },
     Reject {
+        owner: Owner,
         seqs: Vec<u64>,
         requeue: bool,
     },
@@ -317,14 +323,21 @@ impl QueueHandle {
         }
     }
 
-    /// Acknowledges deliveries by queue sequence number.
-    pub async fn ack(&self, seqs: Vec<u64>) {
-        let _ = self.send(QueueCmd::Ack { seqs }).await;
+    /// Acknowledges deliveries by queue sequence number. Deliveries held by another owner
+    /// are left alone.
+    pub async fn ack(&self, owner: Owner, seqs: Vec<u64>) {
+        let _ = self.send(QueueCmd::Ack { owner, seqs }).await;
     }
 
     /// Rejects deliveries, requeueing or dead-lettering them.
-    pub async fn reject(&self, seqs: Vec<u64>, requeue: bool) {
-        let _ = self.send(QueueCmd::Reject { seqs, requeue }).await;
+    pub async fn reject(&self, owner: Owner, seqs: Vec<u64>, requeue: bool) {
+        let _ = self
+            .send(QueueCmd::Reject {
+                owner,
+                seqs,
+                requeue,
+            })
+            .await;
     }
 
     /// Grants credit to a credit-mode consumer.
