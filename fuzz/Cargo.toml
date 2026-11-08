@@ -1,0 +1,24 @@
+[package]
+name = "firemq-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1"
+firemq-amqp-codec = { path = "../crates/firemq-amqp-codec" }
+
+[[bin]]
+name = "amqp_frame"
+path = "fuzz_targets/amqp_frame.rs"
+test = false
+doc = false
+bench = false
+
+# Keep the fuzz crate out of the main workspace.
+[workspace]
+members = ["."]
