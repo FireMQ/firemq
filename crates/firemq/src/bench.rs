@@ -27,7 +27,7 @@ pub struct BenchArgs {
     /// Seconds to run.
     #[arg(long, short, default_value_t = 10)]
     pub duration: u64,
-    /// Write messages to disk (durable queue, persistent messages).
+    /// Write messages to disk (persistent messages). The queue is always durable.
     #[arg(long)]
     pub persistent: bool,
     /// Unconfirmed publishes in flight per publisher.
@@ -36,6 +36,10 @@ pub struct BenchArgs {
     /// Consumer prefetch.
     #[arg(long, default_value_t = 1000)]
     pub prefetch: u32,
+    /// Messages per second per publisher, to measure latency at a fixed load. 0 publishes as
+    /// fast as confirms allow.
+    #[arg(long, default_value_t = 0)]
+    pub rate: u64,
     #[arg(long, default_value = "firemq-bench")]
     pub queue: String,
 }
@@ -79,14 +83,14 @@ pub async fn run(a: BenchArgs) -> Result<(), String> {
         .declare_queue(
             &a.queue,
             QueueOptions {
-                durable: a.persistent,
+                durable: true,
                 ..Default::default()
             },
         )
         .await
         .map_err(|e| e.to_string())?;
     println!(
-        "FireMQ bench: {} publisher(s), {} consumer(s), {} B messages, {}, {}s{}",
+        "FireMQ bench: {} publisher(s), {} consumer(s), {} B messages, {}, {}s{}{}",
         a.publishers,
         a.consumers,
         a.size,
@@ -96,6 +100,11 @@ pub async fn run(a: BenchArgs) -> Result<(), String> {
             "transient"
         },
         a.duration,
+        if a.rate > 0 {
+            format!(", {} msg/s per publisher", a.rate)
+        } else {
+            String::new()
+        },
         if a.embedded { ", embedded broker" } else { "" }
     );
     let published = Arc::new(AtomicU64::new(0));
@@ -139,12 +148,36 @@ pub async fn run(a: BenchArgs) -> Result<(), String> {
         let c = Client::connect(&url).await.map_err(|e| e.to_string())?;
         let published = published.clone();
         let stop = stop.clone();
-        let (queue, size, window, persistent) =
-            (a.queue.clone(), a.size.max(8), a.window, a.persistent);
+        let (queue, size, window, persistent, rate) = (
+            a.queue.clone(),
+            a.size.max(8),
+            a.window,
+            a.persistent,
+            a.rate,
+        );
         tasks.push(tokio::spawn(async move {
             let filler = vec![b'x'; size - 8];
             let mut in_flight = FuturesUnordered::new();
+            let started = Instant::now();
+            let mut sent = 0u64;
             while !stop.load(Ordering::Relaxed) {
+                if rate > 0 {
+                    let due = (started.elapsed().as_secs_f64() * rate as f64) as u64;
+                    if sent >= due {
+                        // Wait for the next send slot, collecting confirms meanwhile.
+                        let slot = Duration::from_secs_f64((sent + 1) as f64 / rate as f64)
+                            .saturating_sub(started.elapsed());
+                        if in_flight.is_empty() {
+                            tokio::time::sleep(slot).await;
+                        } else if let Ok(Some(Ok(()))) =
+                            tokio::time::timeout(slot, in_flight.next()).await
+                        {
+                            published.fetch_add(1, Ordering::Relaxed);
+                        }
+                        continue;
+                    }
+                }
+                sent += 1;
                 let mut body = BytesMut::with_capacity(size);
                 body.put_u64(now_micros());
                 body.put_slice(&filler);

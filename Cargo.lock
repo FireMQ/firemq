@@ -448,14 +448,17 @@ name = "firemq-amqp"
 version = "0.1.0"
 dependencies = [
  "amqprs",
+ "async-trait",
  "base64 0.22.1",
  "bytes",
+ "clap",
  "firemq-amqp-codec",
  "firemq-core",
  "rand",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
