@@ -18,7 +18,8 @@
 //! ```
 //!
 //! Defaults favour safety: queues and exchanges are durable, messages are persistent, and
-//! `publish` waits for the broker's confirm.
+//! `publish` waits for the broker's confirm. The client reconnects on its own when the
+//! connection drops; see [`Reconnect`].
 
 mod client;
 mod message;
@@ -29,7 +30,7 @@ pub use client::{Client, QueueInfo};
 pub use firemq_proto::{ConnectUrl, Map, Properties, Value};
 pub use message::{Message, Subscription};
 pub use options::{
-    ConnectOptions, ExchangeOptions, PublishOptions, QueueOptions, SubscribeOptions,
+    ConnectOptions, ExchangeOptions, PublishOptions, QueueOptions, Reconnect, SubscribeOptions,
 };
 
 /// Errors returned by the client.

@@ -48,6 +48,7 @@ sysinfo = { version = "0.37", default-features = false, features = ["system", "d
 webpki-roots = "1"
 rcgen = "0.13"
 libc = "0.2"
+mimalloc = { version = "0.1", default-features = false }
 ureq = { version = "3", default-features = false, features = ["json"] }
 toml = "0.9"
 tracing = "0.1"

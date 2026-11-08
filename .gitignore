@@ -15,6 +15,9 @@ compat/dotnet/obj/
 compat/node/package-lock.json
 /examples/node/node_modules
 examples/node/package-lock.json
+/docs/book/
+# Benchmark results are committed with their raw logs.
+!/bench/results/**/*.log
 
 # Language bindings
 bindings/python/python/firemq/_ffi/

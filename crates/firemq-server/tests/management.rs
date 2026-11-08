@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use firemq_client::{Client, QueueOptions};
+use firemq_client::{Client, ConnectOptions, QueueOptions};
 use firemq_server::{Server, ServerConfig};
 use serde_json::{Value, json};
 
@@ -355,9 +355,10 @@ async fn definitions_round_trip_between_brokers() {
 async fn connections_consumers_metrics_and_health() {
     let s = start().await;
     let api = Api::new(&s, "guest", "guest");
-    let c = Client::connect(&format!("fire://{}", s.fire_addr().unwrap()))
-        .await
-        .unwrap();
+    // The test closes this connection from the API and checks it stays closed.
+    let mut opts = ConnectOptions::from_url(&format!("fire://{}", s.fire_addr().unwrap())).unwrap();
+    opts.reconnect = None;
+    let c = Client::connect_with(opts).await.unwrap();
     c.declare_queue("work", QueueOptions::default())
         .await
         .unwrap();

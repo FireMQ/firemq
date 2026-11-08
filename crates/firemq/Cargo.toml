@@ -39,6 +39,11 @@ ureq.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# musl's allocator is slow when many threads allocate at once, which halved broker throughput
+# in the static Linux builds and the container image.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc.workspace = true
+
 [dev-dependencies]
 serde_json.workspace = true
 futures.workspace = true

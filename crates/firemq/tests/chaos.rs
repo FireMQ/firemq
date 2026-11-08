@@ -9,7 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use firemq_client::{Client, PublishOptions, QueueOptions};
+use firemq_client::{Client, ConnectOptions, PublishOptions, QueueOptions};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 
@@ -47,7 +47,10 @@ fn start(dir: &std::path::Path, p: &Ports) -> Child {
 
 async fn connect(p: &Ports) -> Client {
     for _ in 0..200 {
-        if let Ok(c) = Client::connect(&format!("fire://127.0.0.1:{}", p.fire)).await {
+        // Each round uses a fresh client, so the client must not reconnect on its own.
+        let mut opts = ConnectOptions::from_url(&format!("fire://127.0.0.1:{}", p.fire)).unwrap();
+        opts.reconnect = None;
+        if let Ok(c) = Client::connect_with(opts).await {
             return c;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;

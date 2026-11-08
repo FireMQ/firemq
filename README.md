@@ -34,7 +34,7 @@ docker run -p 5672:5672 -p 5673:5673 -p 15672:15672 ghcr.io/firemq/firemq
 - **Drop-in for RabbitMQ clients.** FireMQ speaks AMQP 0-9-1. CI runs pika, amqplib, amqp091-go (including its own integration suite), the RabbitMQ Java and .NET clients, and `rabbitmqadmin` against every change. See the [compatibility notes](docs/src/compatibility.md).
 - **Durable, and tested that way.** Persistent messages are confirmed after `fsync`, batched so one sync covers a burst of publishes. A test kills the broker with `kill -9` in the middle of confirmed publishing and checks that nothing confirmed is lost.
 - **RabbitMQ's features, not a subset of a subset.** Direct, fanout, topic and headers exchanges, exchange-to-exchange bindings, alternate exchanges, publisher confirms, mandatory returns, prefetch, TTL, dead-lettering with `x-death`, max length with overflow modes, priorities, single active consumer, transactions, policies, vhosts, users and permissions, memory and disk alarms.
-- **Small.** One static binary. About 20 MB of memory when idle.
+- **Small.** One static binary. An idle broker uses about 8 MB of memory on Linux.
 - **Built for developers.** `firemq pub`, `sub`, `ctl`, `bench` and `doctor` in the terminal; a management UI and a RabbitMQ-compatible HTTP API; Prometheus metrics with RabbitMQ's names; a broker you can embed in Rust tests.
 - **A native protocol and SDKs.** A small MessagePack-based protocol over TCP and WebSocket, with SDKs that share one API across languages.
 

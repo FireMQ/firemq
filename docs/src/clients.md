@@ -23,12 +23,18 @@ Connect with the usual URL, for example `amqp://guest:guest@localhost:5672/`. Se
 
 ## FireMQ SDKs
 
-| Language | Package | Status |
+| Language | Repository | Package |
 |---|---|---|
-| Rust | `firemq-client` | Available |
-| Go, TypeScript (Node, Deno, Bun, browsers), Java, .NET | `firemq-go`, `@firemq/client`, `firemq-java`, `FireMQ.Client` | In progress |
-| Python, Ruby, Swift, Kotlin, Dart, C | Bindings over the Rust core | In progress |
-| Elixir, PHP | Native clients | In progress |
+| Rust | [`crates/firemq-client`](https://github.com/FireMQ/firemq/tree/main/crates/firemq-client) | `firemq-client` on crates.io |
+| Go | [FireMQ/firemq-go](https://github.com/FireMQ/firemq-go) | `github.com/FireMQ/firemq-go` |
+| TypeScript: Node.js, browsers | [FireMQ/firemq-js](https://github.com/FireMQ/firemq-js) | `@firemq/client` on npm |
+| Java, Kotlin | [FireMQ/firemq-java](https://github.com/FireMQ/firemq-java) | `io.github.firemq:firemq-client` and `firemq-kotlin` on Maven Central |
+| .NET | [FireMQ/firemq-dotnet](https://github.com/FireMQ/firemq-dotnet) | `FireMQ.Client` on NuGet |
+| Elixir | [FireMQ/firemq-elixir](https://github.com/FireMQ/firemq-elixir) | `firemq` on Hex |
+| PHP | [FireMQ/firemq-php](https://github.com/FireMQ/firemq-php) | `firemq/firemq` on Packagist |
+| Python, Kotlin, Swift, Ruby, Dart, C | [`bindings/`](https://github.com/FireMQ/firemq/tree/main/bindings), over the Rust SDK | Build from source for now |
+
+Every SDK runs the [conformance suite](conformance.md) against a real broker in its CI. Packages are published to their registries starting with FireMQ v0.1.0; until then, install from the repositories.
 
 Track progress in the [roadmap issue](https://github.com/FireMQ/firemq/issues/23).
 
@@ -69,6 +75,36 @@ while let Some(msg) = jobs.next().await {
 ```
 
 The SDK's defaults favour safety: queues and exchanges are durable, messages are persistent, and `publish` waits for the confirm. Errors are typed: `Error::Unroutable` for a mandatory message nobody received, `Error::Nacked` when a queue rejected it, and `Error::Server { code, .. }` with an AMQP reply code for refused requests.
+
+#### Reconnection
+
+The Rust client reconnects on its own when the connection drops, for example while the broker restarts. After reconnecting, it does the following:
+
+- Declares again the exchanges, queues and bindings it declared. A queue declared with an empty name gets a new name from the broker, and the client moves its bindings and subscriptions to the new name.
+- Resumes every subscription. Your `while let Some(msg) = sub.next().await` loop keeps running.
+- Publishes again any message that was waiting for a confirm. Delivery is at least once, so a consumer can see a message twice.
+
+Messages delivered before the drop and not yet acknowledged go back to the queue, and the broker delivers them again with `redelivered` set. The subscription skips the old copies, and acknowledging one does nothing.
+
+While the client is reconnecting, calls wait up to 30 seconds by default and then fail with `Error::Closed`. Attempts back off from 100 ms to 5 s and continue until you call `close`. To change this, set `ConnectOptions::reconnect`:
+
+```rust
+use std::time::Duration;
+use firemq_client::{Client, ConnectOptions, Reconnect};
+
+# async fn run() -> Result<(), firemq_client::Error> {
+let mut opts = ConnectOptions::from_url("fire://localhost")?;
+opts.reconnect = Some(Reconnect {
+    max_attempts: Some(10),
+    wait: Duration::from_secs(5),
+    ..Default::default()
+});
+let client = Client::connect_with(opts).await?;
+# Ok(())
+# }
+```
+
+Set `reconnect` to `None` to get an error as soon as the connection drops, and handle reconnection yourself.
 
 ### Write your own client
 

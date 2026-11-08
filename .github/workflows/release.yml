@@ -38,6 +38,10 @@ jobs:
       - if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --locked -p firemq --target ${{ matrix.target }}
+        env:
+          # mimalloc's C code must build against musl, not the runner's glibc.
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |

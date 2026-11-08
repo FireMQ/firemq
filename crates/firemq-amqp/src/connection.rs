@@ -405,6 +405,9 @@ struct Connection<R> {
     blocked: bool,
     has_published: bool,
     done: bool,
+    /// Acks decoded from the current read, sent to each queue as one command when the read
+    /// is processed or before any other frame.
+    acks: Vec<(Owner, QueueHandle, Vec<u64>)>,
 }
 
 impl<R: AsyncRead + Send + 'static> Connection<R> {
@@ -481,6 +484,7 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             blocked: false,
             has_published: false,
             done: false,
+            acks: Vec::new(),
         }
     }
 
@@ -565,6 +569,30 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
     }
 
     async fn process_input(&mut self) {
+        self.decode_input().await;
+        self.flush_acks().await;
+    }
+
+    /// A consumer that acks each message sends many `basic.ack` frames per read. Batching
+    /// them keeps acks from competing one by one with publishes for the queue's inbox.
+    fn defer_ack(&mut self, owner: Owner, queue: QueueHandle, seqs: Vec<u64>) {
+        match self
+            .acks
+            .iter_mut()
+            .find(|(o, q, _)| *o == owner && *q == queue)
+        {
+            Some((_, _, pending)) => pending.extend(seqs),
+            None => self.acks.push((owner, queue, seqs)),
+        }
+    }
+
+    async fn flush_acks(&mut self) {
+        for (owner, q, seqs) in std::mem::take(&mut self.acks) {
+            q.ack(owner, seqs).await;
+        }
+    }
+
+    async fn decode_input(&mut self) {
         let max = if self.frame_max == 0 {
             u32::MAX
         } else {
@@ -575,7 +603,20 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 return;
             }
             match codec::decode_frame(&mut self.inbuf, max) {
-                Ok(Some(frame)) => self.on_frame(frame).await,
+                Ok(Some(frame)) => {
+                    let is_ack = matches!(
+                        frame,
+                        Frame::Method {
+                            method: Method::BasicAck(_),
+                            ..
+                        }
+                    );
+                    if !is_ack {
+                        // Keep acks ordered before rejects, recovers, closes and the rest.
+                        self.flush_acks().await;
+                    }
+                    self.on_frame(frame).await
+                }
                 Ok(None) => return,
                 Err(e) => {
                     let code = match e {
@@ -1018,7 +1059,7 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                     tx.push(TxOp::Ack(items));
                 } else {
                     for (q, seqs) in group_by_queue(items) {
-                        q.ack(owner, seqs).await;
+                        self.defer_ack(owner, q, seqs);
                     }
                 }
             }

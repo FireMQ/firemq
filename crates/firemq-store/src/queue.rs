@@ -14,6 +14,10 @@ use crate::record;
 /// Write buffer size that forces a flush before the batch ends.
 const MAX_BUFFER: usize = 1 << 20;
 
+/// How much a sequential read fetches at once. Consumers draining a backlog read records in
+/// order, so one `pread` serves hundreds of small messages.
+const READ_AHEAD: u64 = 256 * 1024;
+
 struct Segment {
     file: Arc<File>,
     /// Bytes in the file plus bytes still in the write buffer (active segment only).
@@ -40,6 +44,26 @@ pub(crate) struct DiskQueue {
     buf: Vec<u8>,
     dirty: Vec<Arc<File>>,
     created: bool,
+    ahead: ReadAhead,
+}
+
+/// Bytes already read from one segment. Records never change once written, so they stay
+/// valid until the segment is deleted, and segment ids are never reused.
+#[derive(Default)]
+struct ReadAhead {
+    segment: u32,
+    offset: u64,
+    data: Vec<u8>,
+    /// Where the last read ended, to tell sequential reads from random ones.
+    next: (u32, u64),
+}
+
+impl ReadAhead {
+    fn get(&self, loc: Loc) -> Option<&[u8]> {
+        let start = (loc.offset as u64).checked_sub(self.offset)? as usize;
+        let end = start + loc.len as usize;
+        (loc.segment == self.segment && end <= self.data.len()).then(|| &self.data[start..end])
+    }
 }
 
 fn seg_path(dir: &Path, id: u32) -> PathBuf {
@@ -90,6 +114,7 @@ impl DiskQueue {
             buf: Vec::new(),
             dirty: Vec::new(),
             created: false,
+            ahead: ReadAhead::default(),
         }
     }
 
@@ -218,19 +243,30 @@ impl QueueStore for DiskQueue {
             .segments
             .get(&loc.segment)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "segment deleted"))?;
-        let mut data = vec![0u8; loc.len as usize];
         let flushed = if loc.segment == self.active {
             seg.len - self.buf.len() as u64
         } else {
             seg.len
         };
-        if loc.offset as u64 >= flushed {
-            let start = (loc.offset as u64 - flushed) as usize;
-            data.copy_from_slice(&self.buf[start..start + loc.len as usize]);
+        let (start, len) = (loc.offset as u64, loc.len as u64);
+        let sequential = self.ahead.next == (loc.segment, start);
+        self.ahead.next = (loc.segment, start + len);
+        let data = if start >= flushed {
+            // Still in the write buffer. Flushes write whole records, so a record is either
+            // entirely in the file or entirely in the buffer.
+            let i = (start - flushed) as usize;
+            &self.buf[i..i + len as usize]
         } else {
-            read_at(&seg.file, &mut data, loc.offset as u64)?;
-        }
-        let d = record::decode(&data)
+            if self.ahead.get(loc).is_none() {
+                let n = if sequential { READ_AHEAD.max(len) } else { len };
+                let a = &mut self.ahead;
+                a.data.resize(n.min(flushed - start) as usize, 0);
+                read_at(&seg.file, &mut a.data, start)?;
+                (a.segment, a.offset) = (loc.segment, start);
+            }
+            self.ahead.get(loc).expect("record was just read")
+        };
+        let d = record::decode(data)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "corrupt record"))?;
         record::to_message(&d)
     }
@@ -372,6 +408,7 @@ impl QueueStore for DiskQueue {
     fn destroy(&mut self) -> io::Result<()> {
         self.segments.clear();
         self.buf.clear();
+        self.ahead = ReadAhead::default();
         self.dirty.clear();
         match fs::remove_dir_all(&self.dir) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
@@ -381,5 +418,78 @@ impl QueueStore for DiskQueue {
 
     fn bodies_in_memory(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use bytes::Bytes;
+    use firemq_core::{BasicProperties, Message, QueueStore};
+
+    use super::*;
+
+    fn queue(dir: &Path, segment_size: u64) -> DiskQueue {
+        let settings = QueueSettings {
+            segment_size,
+            fsync: false,
+            flusher: Flusher::start(Duration::from_millis(1)),
+        };
+        DiskQueue::new(dir.join("q"), serde_json::json!({}), settings)
+    }
+
+    fn body(i: usize) -> Vec<u8> {
+        let mut b = format!("{i:06}").into_bytes();
+        b.resize(100 + (i * 37) % 900, b'a' + (i % 26) as u8);
+        b
+    }
+
+    #[test]
+    fn reads_return_each_record_sequentially_randomly_and_from_the_write_buffer() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut q = queue(dir.path(), 64 * 1024);
+        let mut locs = Vec::new();
+        for i in 0..2000 {
+            let m = Message::new(
+                "ex",
+                "key",
+                BasicProperties::default(),
+                Bytes::from(body(i)),
+            );
+            locs.push(q.append(i as u64 + 1, &m, false).unwrap());
+            // Flush most of the time, leaving some records in the write buffer.
+            if i % 7 != 0 {
+                q.commit(Vec::new());
+            }
+        }
+        assert!(
+            q.segments.len() > 10,
+            "the test should span several segments"
+        );
+        let check = |q: &mut DiskQueue, locs: &[Loc], i: usize| {
+            let m = q.read(locs[i]).unwrap();
+            assert_eq!(m.body.as_ref(), body(i).as_slice(), "record {i}");
+            assert_eq!(m.routing_key, "key");
+        };
+        // A consumer draining in order, then requeued and redelivered records out of order.
+        for i in 0..2000 {
+            check(&mut q, &locs, i);
+        }
+        for i in [1999, 3, 1500, 4, 5, 6, 1000, 999, 0, 1998] {
+            check(&mut q, &locs, i);
+        }
+        // Records appended after a read-ahead are found even though the chunk predates them.
+        let m = Message::new(
+            "ex",
+            "key",
+            BasicProperties::default(),
+            Bytes::from(body(2000)),
+        );
+        locs.push(q.append(2001, &m, false).unwrap());
+        check(&mut q, &locs, 2000);
+        q.commit(Vec::new());
+        check(&mut q, &locs, 1999);
+        check(&mut q, &locs, 2000);
     }
 }

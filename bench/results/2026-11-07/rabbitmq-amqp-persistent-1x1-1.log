@@ -1,0 +1,24 @@
+AMQP bench: 1 publisher(s), 1 consumer(s), 1024 B messages, persistent, 20s
+    1s  published     79259 msg/s  consumed     79580 msg/s
+    2s  published     79261 msg/s  consumed     79036 msg/s
+    3s  published     79165 msg/s  consumed     79480 msg/s
+    4s  published     79212 msg/s  consumed     78952 msg/s
+    5s  published     79399 msg/s  consumed     79476 msg/s
+    6s  published     80498 msg/s  consumed     80686 msg/s
+    7s  published     79063 msg/s  consumed     79432 msg/s
+    8s  published     79674 msg/s  consumed     79397 msg/s
+    9s  published     78710 msg/s  consumed     78733 msg/s
+   10s  published     78213 msg/s  consumed     78376 msg/s
+   11s  published     79149 msg/s  consumed     78672 msg/s
+   12s  published     80553 msg/s  consumed     80584 msg/s
+   13s  published     80105 msg/s  consumed     79999 msg/s
+   14s  published     79234 msg/s  consumed     79550 msg/s
+   15s  published     80593 msg/s  consumed     80271 msg/s
+   16s  published     79236 msg/s  consumed     79304 msg/s
+   17s  published     79259 msg/s  consumed     79750 msg/s
+   18s  published     80089 msg/s  consumed     79814 msg/s
+   19s  published     78120 msg/s  consumed     78653 msg/s
+   20s  published     79585 msg/s  consumed     79586 msg/s
+
+  published 79342 msg/s (81.2 MB/s), consumed 79389 msg/s
+  end-to-end latency  p50 6.30 ms  p95 10.51 ms  p99 11.57 ms  max 14.32 ms

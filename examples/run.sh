@@ -11,7 +11,7 @@ done
 for f in examples/node/*.mjs; do
   echo "== $f"; node "$f"
 done
-for e in hello work_queues topics rpc; do
+for e in hello work_queues publish_subscribe routing topics rpc; do
   echo "== crates/firemq-client/examples/$e.rs"; cargo run --quiet -p firemq-client --example "$e"
 done
 echo "All examples passed."
