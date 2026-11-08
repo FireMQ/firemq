@@ -38,6 +38,7 @@ tokio-rustls.workspace = true
 rcgen.workspace = true
 tempfile.workspace = true
 amqprs = "2"
-firemq-client.workspace = true
+# Path-only, so the published manifest drops it: firemq-client dev-depends on this crate too.
+firemq-client = { path = "../firemq-client" }
 tokio-tungstenite.workspace = true
 serde.workspace = true
