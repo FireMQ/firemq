@@ -1,0 +1,7 @@
+{
+  "name": "firemq-compat-node",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" },
+  "dependencies": { "amqplib": "^0.10.4" }
+}

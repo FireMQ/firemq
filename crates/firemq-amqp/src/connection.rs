@@ -401,6 +401,7 @@ struct Connection<R> {
     last_recv: Instant,
     last_send: Instant,
     closing_until: Option<Instant>,
+    client_closed: bool,
     blocked: bool,
     has_published: bool,
     done: bool,
@@ -476,6 +477,7 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             last_recv: Instant::now(),
             last_send: Instant::now(),
             closing_until: None,
+            client_closed: false,
             blocked: false,
             has_published: false,
             done: false,
@@ -521,6 +523,9 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                     }
                 }
                 _ = heartbeat.tick() => self.on_tick(tick),
+                _ = tokio::time::sleep_until(self.closing_until.unwrap_or_else(Instant::now)), if self.closing_until.is_some() => {
+                    self.done = true;
+                }
             }
         }
         self.flush_out().await;
@@ -642,12 +647,21 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
     async fn on_frame(&mut self, frame: Frame) {
         if self.closing_until.is_some() {
             // After connection.close only close-ok (or a crossing close) matters.
-            if let Frame::Method {
-                method: Method::ConnectionCloseOk(_) | Method::ConnectionClose(_),
-                ..
-            } = frame
-            {
-                self.done = true;
+            if !self.client_closed {
+                match frame {
+                    Frame::Method {
+                        method: Method::ConnectionCloseOk(_),
+                        ..
+                    } => self.done = true,
+                    Frame::Method {
+                        method: Method::ConnectionClose(_),
+                        ..
+                    } => {
+                        self.send(0, ConnectionCloseOk {});
+                        self.done = true;
+                    }
+                    _ => {}
+                }
             }
             return;
         }
@@ -668,8 +682,11 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
     async fn on_connection_method(&mut self, method: Method) {
         match method {
             Method::ConnectionClose(_) => {
+                // The peer that receives close-ok closes the socket. Wait for the client to
+                // do so, with a deadline, instead of racing it.
                 self.send(0, ConnectionCloseOk {});
-                self.done = true;
+                self.client_closed = true;
+                self.closing_until = Some(Instant::now() + Duration::from_secs(3));
             }
             Method::ConnectionCloseOk(_) => self.done = true,
             Method::ConnectionUpdateSecret(_) => self.send(0, ConnectionUpdateSecretOk {}),
@@ -705,7 +722,7 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 );
                 return;
             }
-            if self.channels.contains_key(&ch) {
+            if self.channels.get(&ch).is_some_and(|c| !c.closing) {
                 self.close_connection(
                     BrokerError::new(
                         reply_code::CHANNEL_ERROR,
@@ -716,8 +733,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 );
                 return;
             }
-            self.channels.insert(ch, Channel::new());
-            self.info.channels.fetch_add(1, Ordering::Relaxed);
+            // Reopening a channel the broker closed is fine even before its close-ok arrives.
+            if self.channels.insert(ch, Channel::new()).is_none() {
+                self.info.channels.fetch_add(1, Ordering::Relaxed);
+            }
             self.send(
                 ch,
                 ChannelOpenOk {
@@ -727,6 +746,10 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             return;
         }
         let Some(chan) = self.channels.get(&ch) else {
+            if let Method::ChannelCloseOk(_) = method {
+                // A late close-ok for a channel that is already gone.
+                return;
+            }
             self.close_connection(
                 BrokerError::new(
                     reply_code::CHANNEL_ERROR,
@@ -740,10 +763,8 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
         if chan.closing {
             match method {
                 Method::ChannelCloseOk(_) => self.remove_channel(ch),
-                Method::ChannelClose(_) => {
-                    self.send(ch, ChannelCloseOk {});
-                    self.remove_channel(ch);
-                }
+                // Both sides closed at once: answer, and keep waiting for our close-ok.
+                Method::ChannelClose(_) => self.send(ch, ChannelCloseOk {}),
                 _ => {}
             }
             return;
@@ -803,7 +824,13 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
                 self.remove_channel(ch);
             }
             Method::ChannelCloseOk(_) => {}
-            Method::ChannelFlow(m) => self.send(ch, ChannelFlowOk { active: m.active }),
+            Method::ChannelFlow(m) => {
+                if !m.active {
+                    // RabbitMQ does not support pausing deliveries with channel.flow either.
+                    return Err(BrokerError::not_implemented("active=false"));
+                }
+                self.send(ch, ChannelFlowOk { active: true });
+            }
             Method::ExchangeDeclare(m) => {
                 if !m.passive {
                     self.check(Access::Configure, "exchange", &m.exchange)?;
@@ -998,6 +1025,11 @@ impl<R: AsyncRead + Send + 'static> Connection<R> {
             Method::BasicNack(m) => {
                 let items = self.take(ch, m.delivery_tag, m.multiple)?;
                 self.reject(ch, items, m.requeue).await;
+            }
+            Method::BasicRecover(BasicRecover { requeue: false })
+            | Method::BasicRecoverAsync(BasicRecoverAsync { requeue: false }) => {
+                // RabbitMQ does not redeliver to the same consumer either.
+                return Err(BrokerError::not_implemented("requeue=false"));
             }
             Method::BasicRecover(_) | Method::BasicRecoverAsync(_) => {
                 let is_sync = matches!(method, Method::BasicRecover(_));

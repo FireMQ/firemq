@@ -9,3 +9,7 @@ __pycache__/
 *.pyc
 .venv/
 node_modules/
+compat/java/lib/
+compat/dotnet/bin/
+compat/dotnet/obj/
+compat/node/package-lock.json

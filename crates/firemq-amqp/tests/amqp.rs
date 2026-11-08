@@ -339,3 +339,148 @@ async fn large_messages_span_frames() {
         .unwrap();
     assert_eq!(msg.content.unwrap().len(), 1_000_000);
 }
+
+/// A minimal raw AMQP client, for exact frame sequences.
+struct Raw {
+    stream: tokio::net::TcpStream,
+    buf: bytes::BytesMut,
+}
+
+impl Raw {
+    async fn connect(addr: SocketAddr) -> Raw {
+        use firemq_amqp_codec::methods::*;
+        use tokio::io::AsyncWriteExt;
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(firemq_amqp_codec::PROTOCOL_HEADER)
+            .await
+            .unwrap();
+        let mut raw = Raw {
+            stream,
+            buf: bytes::BytesMut::new(),
+        };
+        raw.expect(0, "connection.start").await;
+        raw.send(
+            0,
+            ConnectionStartOk {
+                mechanism: "PLAIN".into(),
+                response: b"\0guest\0guest".to_vec().into(),
+                locale: "en_US".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        raw.expect(0, "connection.tune").await;
+        raw.send(
+            0,
+            ConnectionTuneOk {
+                channel_max: 10,
+                frame_max: 131072,
+                heartbeat: 0,
+            },
+        )
+        .await;
+        raw.send(
+            0,
+            ConnectionOpen {
+                virtual_host: "/".into(),
+                ..Default::default()
+            },
+        )
+        .await;
+        raw.expect(0, "connection.open-ok").await;
+        raw
+    }
+
+    async fn send_bytes(&mut self, out: bytes::BytesMut) {
+        use tokio::io::AsyncWriteExt;
+        self.stream.write_all(&out).await.unwrap();
+    }
+
+    async fn send(&mut self, ch: u16, m: impl Into<firemq_amqp_codec::Method>) {
+        let mut out = bytes::BytesMut::new();
+        firemq_amqp_codec::encode_method(&mut out, ch, &m.into());
+        self.send_bytes(out).await;
+    }
+
+    async fn next_method(&mut self) -> (u16, firemq_amqp_codec::Method) {
+        use tokio::io::AsyncReadExt;
+        loop {
+            if let Some(f) = firemq_amqp_codec::decode_frame(&mut self.buf, 0).unwrap() {
+                if let firemq_amqp_codec::Frame::Method { channel, method } = f {
+                    return (channel, method);
+                }
+                continue;
+            }
+            let n = timeout(Duration::from_secs(2), self.stream.read_buf(&mut self.buf))
+                .await
+                .expect("timed out waiting for a frame")
+                .unwrap();
+            assert!(n > 0, "broker closed the socket");
+        }
+    }
+
+    async fn expect(&mut self, ch: u16, name: &str) -> firemq_amqp_codec::Method {
+        let (c, m) = self.next_method().await;
+        assert_eq!((c, m.name()), (ch, name), "unexpected {m:?}");
+        m
+    }
+}
+
+#[tokio::test]
+async fn crossing_channel_close_keeps_the_connection() {
+    use firemq_amqp_codec::methods::*;
+    let (_broker, addr) = start().await;
+    let mut raw = Raw::connect(addr).await;
+    for ch in [1, 2] {
+        raw.send(ch, ChannelOpen::default()).await;
+        raw.expect(ch, "channel.open-ok").await;
+    }
+    // Publish to a missing exchange and close the channel in the same write, so the
+    // broker's channel.close and the client's channel.close cross.
+    let mut out = bytes::BytesMut::new();
+    firemq_amqp_codec::encode_content(
+        &mut out,
+        1,
+        &BasicPublish {
+            exchange: "nonexisting-exchange".into(),
+            ..Default::default()
+        }
+        .into(),
+        &Default::default(),
+        b"x",
+        131072,
+    );
+    firemq_amqp_codec::encode_method(
+        &mut out,
+        1,
+        &ChannelClose {
+            reply_code: 200,
+            ..Default::default()
+        }
+        .into(),
+    );
+    raw.send_bytes(out).await;
+    match raw.expect(1, "channel.close").await {
+        firemq_amqp_codec::Method::ChannelClose(c) => assert_eq!(c.reply_code, 404),
+        _ => unreachable!(),
+    }
+    raw.expect(1, "channel.close-ok").await;
+    raw.send(1, ChannelCloseOk {}).await;
+    // A late, duplicate close-ok must not hurt either.
+    raw.send(1, ChannelCloseOk {}).await;
+    raw.send(
+        2,
+        ExchangeDeclare {
+            exchange: "test-channel-still-exists".into(),
+            kind: "direct".into(),
+            auto_delete: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    raw.expect(2, "exchange.declare-ok").await;
+    // The broker-closed channel can be reopened.
+    raw.send(1, ChannelOpen::default()).await;
+    raw.expect(1, "channel.open-ok").await;
+}
