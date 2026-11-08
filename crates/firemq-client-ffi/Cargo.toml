@@ -1,0 +1,34 @@
+[package]
+name = "firemq-client-ffi"
+description = "C ABI and UniFFI bindings (Python, Kotlin, Swift, Ruby) for the FireMQ client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+name = "firemq_client_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+cli = ["uniffi/cli"]
+
+[dependencies]
+base64.workspace = true
+firemq-client.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uniffi.workspace = true
+
+[dev-dependencies]
+firemq.path = "../firemq"

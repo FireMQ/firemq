@@ -1,0 +1,14 @@
+name: firemq
+description: Dart client for the FireMQ message broker, over the C API of its Rust client.
+version: 0.1.0
+repository: https://github.com/FireMQ/firemq/tree/main/bindings/dart
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  ffi: ^2.1.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

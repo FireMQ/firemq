@@ -1,0 +1,232 @@
+name: Bindings
+
+# Builds crates/firemq-client-ffi and tests every language binding in bindings/ against a
+# broker built from this repository: each runs its tests or example, then the SDK conformance
+# suite (spec/conformance.md) through its driver.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: bindings-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+  FIREMQ_URL: fire://guest:guest@127.0.0.1:5673
+
+jobs:
+  native:
+    name: FFI library (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p firemq -p firemq-conformance -p firemq-client-ffi
+      - run: cargo test --locked -p firemq-client-ffi
+      - name: Generated bindings are up to date
+        run: |
+          cargo install cbindgen --version 0.29.4 --locked
+          bindings/generate.sh
+          git diff --exit-code -- bindings || {
+            echo "::error::Generated bindings are stale; run bindings/generate.sh and commit the result."
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bindings-linux
+          path: |
+            target/debug/firemq
+            target/debug/firemq-conformance
+            target/debug/libfiremq_client_ffi.so
+          retention-days: 3
+
+  python:
+    name: Python
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: bindings-linux
+          path: ci-bin
+      - name: Start FireMQ
+        run: |
+          chmod +x ci-bin/firemq ci-bin/firemq-conformance
+          ci-bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v6
+      - name: Build and test
+        working-directory: bindings/python
+        run: |
+          uv venv
+          uv pip install maturin pytest
+          source .venv/bin/activate
+          maturin develop
+          pytest -v
+      - name: Conformance
+        run: ci-bin/firemq-conformance run --driver "bindings/python/.venv/bin/python bindings/python/conformance_driver.py"
+      - name: Broker log
+        if: always()
+        run: tail -n 100 firemq.log
+
+  kotlin:
+    name: Kotlin
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: bindings-linux
+          path: ci-bin
+      - name: Start FireMQ
+        run: |
+          chmod +x ci-bin/firemq ci-bin/firemq-conformance
+          ci-bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14"
+      - name: Test
+        working-directory: bindings/kotlin
+        env:
+          FIREMQ_LIB_DIR: ${{ github.workspace }}/ci-bin
+        run: gradle test conformanceDriver --no-daemon
+      - name: Conformance
+        run: ci-bin/firemq-conformance run --driver bindings/kotlin/build/conformance-driver
+
+  swift:
+    name: Swift (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p firemq -p firemq-conformance -p firemq-client-ffi
+      - name: Start FireMQ
+        run: |
+          target/debug/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - name: Build and run the example
+        working-directory: bindings/swift
+        run: |
+          swift build -Xlinker -L../../target/debug
+          DYLD_LIBRARY_PATH=../../target/debug .build/debug/hello-firemq
+      - name: Conformance
+        env:
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/target/debug
+        run: target/debug/firemq-conformance run --driver bindings/swift/.build/debug/firemq-conformance-driver
+
+  swift-xcframework:
+    name: Swift XCFramework
+    # Packaging only; run it by hand from the Actions tab.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: bindings/swift/build-xcframework.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FireMQFFI.xcframework
+          path: bindings/swift/build/FireMQFFI.xcframework
+          retention-days: 7
+
+  ruby:
+    name: Ruby
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: bindings-linux
+          path: ci-bin
+      - name: Start FireMQ
+        run: |
+          chmod +x ci-bin/firemq ci-bin/firemq-conformance
+          ci-bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - name: Test
+        working-directory: bindings/ruby
+        env:
+          FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
+        run: |
+          bundle install
+          bundle exec ruby -Ilib -Itest test/test_firemq.rb
+      - name: Conformance
+        env:
+          FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
+        run: ci-bin/firemq-conformance run --driver "cd bindings/ruby && bundle exec ruby -Ilib conformance_driver.rb"
+
+  dart:
+    name: Dart
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: bindings-linux
+          path: ci-bin
+      - name: Start FireMQ
+        run: |
+          chmod +x ci-bin/firemq ci-bin/firemq-conformance
+          ci-bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - uses: dart-lang/setup-dart@v1
+      - name: Test
+        working-directory: bindings/dart
+        env:
+          FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos
+          dart test
+          dart run example/hello.dart
+      - name: Conformance
+        env:
+          FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
+        run: ci-bin/firemq-conformance run --driver "cd bindings/dart && dart run tool/conformance_driver.dart"
+
+  c:
+    name: C
+    needs: native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: bindings-linux
+          path: ci-bin
+      - name: Start FireMQ
+        run: |
+          chmod +x ci-bin/firemq ci-bin/firemq-conformance
+          ci-bin/firemq --ephemeral > firemq.log 2>&1 &
+          for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
+      - name: Build and run the example
+        working-directory: bindings/c
+        run: |
+          make example LIBDIR=$GITHUB_WORKSPACE/ci-bin
+          ./example
+      - name: The header compiles as C++
+        working-directory: bindings/c
+        run: echo '#include "firemq.h"' | c++ -std=c++17 -Wall -Werror -fsyntax-only -x c++ -I. -

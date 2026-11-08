@@ -53,6 +53,7 @@ ureq = { version = "3", default-features = false, features = ["json"] }
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+uniffi = "0.32"
 url = "2"
 
 [profile.release]

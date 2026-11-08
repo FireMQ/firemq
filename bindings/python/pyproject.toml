@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "firemq"
+version = "0.1.0"
+description = "Python client for FireMQ, built on the Rust client"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{ name = "The FireMQ Authors" }]
+keywords = ["firemq", "messaging", "queue", "amqp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: System :: Networking",
+]
+
+[project.urls]
+Repository = "https://github.com/FireMQ/firemq"
+
+[tool.maturin]
+bindings = "uniffi"
+manifest-path = "../../crates/firemq-client-ffi/Cargo.toml"
+python-source = "python"
+module-name = "firemq._ffi"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
