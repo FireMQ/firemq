@@ -205,7 +205,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.13"]
+        # The oldest and newest supported versions. The runner's own Python builds no longer
+        # include 3.9, so the tests run in the official Python images.
+        python: ["3.9", "3.14"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -224,15 +226,13 @@ jobs:
           chmod +x bin/firemq
           bin/firemq --ephemeral > firemq.log 2>&1 &
           for i in $(seq 1 100); do nc -z 127.0.0.1 5673 && break; sleep 0.1; done
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
       - name: Install the wheel and run the tests against it
+        # The tests directory is the working directory, so `import firemq` finds the wheel.
         run: |
-          python -m venv venv
-          venv/bin/pip install --quiet dist/*.whl pytest
-          # Run from the tests directory, so `import firemq` finds the installed wheel.
-          cd bindings/python/tests && ../../../venv/bin/python -m pytest -v -p no:cacheprovider .
+          docker run --rm --network host -v "$PWD:/w" -w /w/bindings/python/tests \
+            python:${{ matrix.python }}-slim sh -c '
+              pip install --quiet --root-user-action=ignore /w/dist/*.whl pytest &&
+              python -m pytest -v -p no:cacheprovider .'
       - if: always()
         run: tail -n 50 firemq.log
 
