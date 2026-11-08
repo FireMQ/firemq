@@ -99,6 +99,8 @@ pub struct Server {
     addrs: Addresses,
     tasks: Vec<JoinHandle<()>>,
     recovery: firemq_core::RecoveryReport,
+    user: String,
+    pass: String,
 }
 
 type BoxStream = Box<dyn IoStream>;
@@ -279,6 +281,8 @@ impl Server {
             addrs,
             tasks,
             recovery,
+            user: config.default_user.clone(),
+            pass: config.default_pass.clone(),
         })
     }
 
@@ -306,6 +310,37 @@ impl Server {
 
     pub fn http_addr(&self) -> Option<SocketAddr> {
         self.addrs.http
+    }
+
+    fn url(&self, scheme: &str, addr: Option<SocketAddr>, path: &str) -> Option<String> {
+        let a = addr?;
+        let host = if a.ip().is_unspecified() || a.ip().is_loopback() {
+            "localhost".to_string()
+        } else {
+            a.ip().to_string()
+        };
+        Some(format!(
+            "{scheme}://{}:{}@{host}:{}{path}",
+            self.user,
+            self.pass,
+            a.port()
+        ))
+    }
+
+    /// An `amqp://` URL with the default user, for clients and tests.
+    pub fn amqp_url(&self) -> Option<String> {
+        self.url("amqp", self.addrs.amqp, "/%2F")
+    }
+
+    /// A `fire://` URL with the default user.
+    pub fn fire_url(&self) -> Option<String> {
+        self.url("fire", self.addrs.fire, "")
+    }
+
+    /// The management UI and API base URL.
+    pub fn http_url(&self) -> Option<String> {
+        let a = self.addrs.http?;
+        Some(format!("http://localhost:{}", a.port()))
     }
 
     /// Waits until every listener stops.

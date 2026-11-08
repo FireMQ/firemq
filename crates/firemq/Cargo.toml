@@ -10,21 +10,37 @@ homepage.workspace = true
 authors.workspace = true
 readme = "../../README.md"
 keywords = ["amqp", "rabbitmq", "message-broker", "queue", "messaging"]
-categories = ["network-programming", "asynchronous"]
+categories = ["network-programming", "asynchronous", "command-line-utilities"]
+
+[lib]
+path = "src/lib.rs"
 
 [[bin]]
 name = "firemq"
 path = "src/main.rs"
 
 [dependencies]
+base64.workspace = true
+bytes.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
+firemq-client.workspace = true
+firemq-core.workspace = true
 firemq-server.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
+toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+ureq.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [dev-dependencies]
-firemq-client.workspace = true
+serde_json.workspace = true
 futures.workspace = true
 rand.workspace = true
 tempfile.workspace = true

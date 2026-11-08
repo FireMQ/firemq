@@ -1,129 +1,89 @@
-use std::net::SocketAddr;
-use std::path::PathBuf;
+mod bench;
+mod config;
+mod ctl;
+mod doctor;
+mod msg;
+mod serve;
 
-use clap::Parser;
-use firemq_server::{Server, ServerConfig, TlsConfig};
+use clap::{CommandFactory, Parser, Subcommand};
 
-/// FireMQ: a lean, RabbitMQ-compatible message broker.
+pub use firemq::builder;
+
+/// FireMQ: a lean, fast, RabbitMQ-compatible message broker.
+///
+/// Run `firemq` with no arguments to start a broker with zero configuration.
 #[derive(Parser, Debug)]
-#[command(version, about)]
-struct Args {
-    /// AMQP 0-9-1 listen address.
-    #[arg(long, env = "FIREMQ_AMQP", default_value = "0.0.0.0:5672")]
-    amqp: SocketAddr,
-    /// FireMQ protocol listen address.
-    #[arg(long, env = "FIREMQ_FIRE", default_value = "0.0.0.0:5673")]
-    fire: SocketAddr,
-    /// HTTP listen address (WebSocket, management API, UI).
-    #[arg(long, env = "FIREMQ_HTTP", default_value = "0.0.0.0:15672")]
-    http: SocketAddr,
-    /// AMQPS (AMQP over TLS) listen address; used when a certificate is set.
-    #[arg(long, env = "FIREMQ_AMQPS", default_value = "0.0.0.0:5671")]
-    amqps: SocketAddr,
-    /// FireMQ protocol over TLS listen address; used when a certificate is set.
-    #[arg(long, env = "FIREMQ_FIRES", default_value = "0.0.0.0:5674")]
-    fires: SocketAddr,
-    /// TLS certificate chain (PEM). Enables the TLS listeners.
-    #[arg(long, env = "FIREMQ_TLS_CERT", requires = "tls_key")]
-    tls_cert: Option<PathBuf>,
-    /// TLS private key (PEM).
-    #[arg(long, env = "FIREMQ_TLS_KEY", requires = "tls_cert")]
-    tls_key: Option<PathBuf>,
-    /// Directory for durable queues, messages and definitions.
-    #[arg(long, env = "FIREMQ_DATA_DIR", default_value = "firemq-data")]
-    data_dir: PathBuf,
-    /// Keep everything in memory; nothing survives a restart. Handy for tests and CI.
-    #[arg(long, env = "FIREMQ_EPHEMERAL")]
-    ephemeral: bool,
-    /// Sync persistent messages to disk before confirming them.
-    #[arg(long, env = "FIREMQ_FSYNC", default_value_t = true, action = clap::ArgAction::Set)]
-    fsync: bool,
-    /// Pause publishers when the broker uses more than this fraction of system memory.
-    #[arg(long, env = "FIREMQ_MEMORY_HIGH_WATERMARK", default_value_t = 0.4)]
-    memory_high_watermark: f64,
-    /// Absolute memory limit such as 2GiB; overrides the watermark.
-    #[arg(long, env = "FIREMQ_MEMORY_LIMIT", value_parser = parse_size)]
-    memory_limit: Option<u64>,
-    /// Pause publishers when free disk space drops below this, such as 1GB.
-    #[arg(long, env = "FIREMQ_DISK_FREE_LIMIT", default_value = "50MB", value_parser = parse_size)]
-    disk_free_limit: u64,
-    /// Users who may only connect from localhost, comma-separated. Empty allows everyone.
-    #[arg(long, env = "FIREMQ_LOOPBACK_USERS", default_value = "guest")]
-    loopback_users: String,
+#[command(version, about, long_about = None, args_conflicts_with_subcommands = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+    #[command(flatten)]
+    serve: serve::ServeArgs,
 }
 
-fn parse_size(s: &str) -> Result<u64, String> {
-    firemq_server::alarms::parse_size(s).ok_or_else(|| {
-        format!("invalid size '{s}'; use a number with an optional unit such as 512MB or 2GiB")
-    })
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Start the broker (the default command).
+    Serve(serve::ServeArgs),
+    /// Write a commented firemq.toml with every setting and its default.
+    Init {
+        /// Where to write the file.
+        #[arg(default_value = "firemq.toml")]
+        path: String,
+        /// Overwrite an existing file.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Manage a running broker: list, declare, delete, users, policies, definitions.
+    Ctl(ctl::CtlArgs),
+    /// Publish a message.
+    Pub(msg::PubArgs),
+    /// Consume messages and print them.
+    Sub(msg::SubArgs),
+    /// Measure throughput and latency.
+    Bench(bench::BenchArgs),
+    /// Check the environment and a running broker.
+    Doctor(doctor::DoctorArgs),
+    /// Print shell completions, for example: firemq completions zsh > ~/.zfunc/_firemq
+    Completions { shell: clap_complete::Shell },
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("FIREMQ_LOG")
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .init();
-    let args = Args::parse();
-    let tls = match (args.tls_cert, args.tls_key) {
-        (Some(cert), Some(key)) => Some(TlsConfig { cert, key }),
-        _ => None,
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime")
+}
+
+fn main() {
+    let cli = Cli::parse();
+    let result = match cli.command {
+        None => serve::run(cli.serve),
+        Some(Command::Serve(args)) => serve::run(args),
+        Some(Command::Init { path, force }) => init(&path, force),
+        Some(Command::Ctl(args)) => ctl::run(args),
+        Some(Command::Pub(args)) => runtime().block_on(msg::publish(args)),
+        Some(Command::Sub(args)) => runtime().block_on(msg::subscribe(args)),
+        Some(Command::Bench(args)) => runtime().block_on(bench::run(args)),
+        Some(Command::Doctor(args)) => doctor::run(args),
+        Some(Command::Completions { shell }) => {
+            clap_complete::generate(shell, &mut Cli::command(), "firemq", &mut std::io::stdout());
+            Ok(())
+        }
     };
-    let mut config = ServerConfig {
-        amqp: Some(args.amqp),
-        amqps: Some(args.amqps),
-        fire: Some(args.fire),
-        fires: Some(args.fires),
-        http: Some(args.http),
-        tls,
-        data_dir: (!args.ephemeral).then(|| args.data_dir.clone()),
-        ..Default::default()
-    };
-    config.store.fsync = args.fsync;
-    config.alarms = Some(firemq_server::AlarmConfig {
-        memory_high_watermark: args.memory_high_watermark,
-        memory_limit: args.memory_limit,
-        disk_free_limit: args.disk_free_limit,
-        ..Default::default()
-    });
-    config.broker.loopback_users = args
-        .loopback_users
-        .split(',')
-        .map(str::trim)
-        .filter(|u| !u.is_empty())
-        .map(String::from)
-        .collect();
-    let server = Server::start(config).await?;
-    println!("FireMQ {} is running", env!("CARGO_PKG_VERSION"));
-    if args.ephemeral {
-        println!("  Storage    in memory (--ephemeral)");
-    } else {
-        let r = server.recovery();
-        println!(
-            "  Storage    {} ({} queues, {} messages recovered)",
-            args.data_dir.display(),
-            r.queues,
-            r.messages
-        );
+    if let Err(e) = result {
+        eprintln!("error: {e}");
+        std::process::exit(1);
     }
-    if let Some(a) = server.amqp_addr() {
-        println!("  AMQP       amqp://guest:guest@localhost:{}", a.port());
+}
+
+fn init(path: &str, force: bool) -> Result<(), String> {
+    if std::path::Path::new(path).exists() && !force {
+        return Err(format!(
+            "{path} already exists; use --force to overwrite it"
+        ));
     }
-    if let Some(a) = server.addresses().amqps {
-        println!("  AMQPS      amqps://guest:guest@localhost:{}", a.port());
-    }
-    if let Some(a) = server.fire_addr() {
-        println!("  FireMQ     fire://guest:guest@localhost:{}", a.port());
-    }
-    if let Some(a) = server.addresses().fires {
-        println!("  FireMQ TLS fires://guest:guest@localhost:{}", a.port());
-    }
-    if let Some(a) = server.http_addr() {
-        println!("  WebSocket  ws://localhost:{}/fire", a.port());
-    }
-    tokio::signal::ctrl_c().await?;
-    server.shutdown().await;
+    std::fs::write(path, config::TEMPLATE).map_err(|e| format!("cannot write {path}: {e}"))?;
+    println!("wrote {path}; edit it and run `firemq`");
     Ok(())
 }
