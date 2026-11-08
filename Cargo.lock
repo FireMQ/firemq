@@ -487,6 +487,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "firemq-conformance"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "clap",
+ "firemq",
+ "firemq-client",
+ "firemq-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "firemq-core"
 version = "0.1.0"
 dependencies = [

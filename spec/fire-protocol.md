@@ -1,6 +1,6 @@
 # The FireMQ protocol
 
-Version 1 (draft). Status: unstable until the Rust, Go and TypeScript SDKs all pass the conformance suite; after that, changes are additive only.
+Version 1, release candidate. The version freezes once the Rust, Go and TypeScript SDKs pass the [conformance suite](conformance.md); from then on, changes are additive only and gated by capabilities.
 
 The FireMQ protocol is the native protocol of the FireMQ broker. It carries the same model as AMQP 0-9-1 (exchanges, queues, bindings, acknowledgements, publisher confirms) in a format that is small enough to implement in an afternoon in any language with a MessagePack library.
 
