@@ -204,6 +204,9 @@ jobs:
           dart analyze --fatal-infos
           dart test
           dart run example/hello.dart
+      - name: The package is publishable
+        working-directory: bindings/dart
+        run: dart pub publish --dry-run
       - name: Conformance
         env:
           FIREMQ_LIB: ${{ github.workspace }}/ci-bin/libfiremq_client_ffi.so
