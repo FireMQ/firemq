@@ -10,6 +10,12 @@ struct Args {
     /// AMQP 0-9-1 listen address.
     #[arg(long, env = "FIREMQ_AMQP", default_value = "0.0.0.0:5672")]
     amqp: SocketAddr,
+    /// FireMQ protocol listen address.
+    #[arg(long, env = "FIREMQ_FIRE", default_value = "0.0.0.0:5673")]
+    fire: SocketAddr,
+    /// HTTP listen address (WebSocket, management API, UI).
+    #[arg(long, env = "FIREMQ_HTTP", default_value = "0.0.0.0:15672")]
+    http: SocketAddr,
 }
 
 #[tokio::main]
@@ -23,20 +29,22 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let server = Server::start(ServerConfig {
         amqp: Some(args.amqp),
+        fire: Some(args.fire),
+        http: Some(args.http),
         ..Default::default()
     })
     .await?;
+    println!("FireMQ {} is running", env!("CARGO_PKG_VERSION"));
     if let Some(a) = server.amqp_addr() {
-        println!("FireMQ {} is running", env!("CARGO_PKG_VERSION"));
-        println!("  AMQP    amqp://guest:guest@localhost:{}", a.port());
+        println!("  AMQP       amqp://guest:guest@localhost:{}", a.port());
     }
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
-        _ = async { server_wait_forever().await } => {}
+    if let Some(a) = server.fire_addr() {
+        println!("  FireMQ     fire://guest:guest@localhost:{}", a.port());
     }
+    if let Some(a) = server.http_addr() {
+        println!("  WebSocket  ws://localhost:{}/fire", a.port());
+    }
+    tokio::signal::ctrl_c().await?;
+    server.shutdown().await;
     Ok(())
-}
-
-async fn server_wait_forever() {
-    std::future::pending::<()>().await
 }

@@ -12,7 +12,18 @@ keywords = ["firemq", "amqp", "broker", "server"]
 categories = ["network-programming", "asynchronous"]
 
 [dependencies]
+axum.workspace = true
+bytes.workspace = true
 firemq-amqp.workspace = true
 firemq-core.workspace = true
+firemq-proto.workspace = true
+futures.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+amqprs = "2"
+firemq-client.workspace = true
+tokio-tungstenite.workspace = true
+serde.workspace = true
