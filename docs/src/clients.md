@@ -23,12 +23,18 @@ Connect with the usual URL, for example `amqp://guest:guest@localhost:5672/`. Se
 
 ## FireMQ SDKs
 
-| Language | Package | Status |
+| Language | Repository | Package |
 |---|---|---|
-| Rust | `firemq-client` | Available |
-| Go, TypeScript (Node, Deno, Bun, browsers), Java, .NET | `firemq-go`, `@firemq/client`, `firemq-java`, `FireMQ.Client` | In progress |
-| Python, Ruby, Swift, Kotlin, Dart, C | Bindings over the Rust core | In progress |
-| Elixir, PHP | Native clients | In progress |
+| Rust | [`crates/firemq-client`](https://github.com/FireMQ/firemq/tree/main/crates/firemq-client) | `firemq-client` on crates.io |
+| Go | [FireMQ/firemq-go](https://github.com/FireMQ/firemq-go) | `github.com/FireMQ/firemq-go` |
+| TypeScript: Node.js, browsers | [FireMQ/firemq-js](https://github.com/FireMQ/firemq-js) | `@firemq/client` on npm |
+| Java, Kotlin | [FireMQ/firemq-java](https://github.com/FireMQ/firemq-java) | `io.github.firemq:firemq-client` and `firemq-kotlin` on Maven Central |
+| .NET | [FireMQ/firemq-dotnet](https://github.com/FireMQ/firemq-dotnet) | `FireMQ.Client` on NuGet |
+| Elixir | [FireMQ/firemq-elixir](https://github.com/FireMQ/firemq-elixir) | `firemq` on Hex |
+| PHP | [FireMQ/firemq-php](https://github.com/FireMQ/firemq-php) | `firemq/firemq` on Packagist |
+| Python, Kotlin, Swift, Ruby, Dart, C | [`bindings/`](https://github.com/FireMQ/firemq/tree/main/bindings), over the Rust SDK | Build from source for now |
+
+Every SDK runs the [conformance suite](conformance.md) against a real broker in its CI. Packages are published to their registries starting with FireMQ v0.1.0; until then, install from the repositories.
 
 Track progress in the [roadmap issue](https://github.com/FireMQ/firemq/issues/23).
 

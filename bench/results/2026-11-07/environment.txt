@@ -1,0 +1,8 @@
+date: 2026-11-08T01:44:52Z
+host: Apple M2 Pro, 10 cores
+docker: Docker Desktop 29.4.3, 10 CPUs, 8321712128 bytes
+limits: --cpus 4 --memory 2g for the broker, --cpus 4 for the load generator
+firemq: bf67ac7, image 13.8MB
+rabbitmq: rabbitmq:4-management, image 456MB, RabbitMQ 4.4.0, Erlang 29
+duration: 20s per run, 3 runs; recovery backlog 2000000 messages
+measuring container start: 0.19s
