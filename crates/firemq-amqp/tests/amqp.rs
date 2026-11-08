@@ -503,3 +503,77 @@ async fn alarms_send_connection_blocked_and_unblocked() {
     late.expect(0, "connection.blocked").await;
     broker.set_blocked(false);
 }
+
+/// The broker batches the acks it decodes from one read. A nack and a channel close in the
+/// same read must still see those acks first, or acked messages would come back.
+#[tokio::test]
+async fn acks_in_one_read_apply_before_a_following_nack_and_close() {
+    use firemq_amqp_codec::methods::*;
+    let (_broker, addr) = start().await;
+    let (_conn, ch) = connect(addr).await;
+    ch.queue_declare(QueueDeclareArguments::new("batched"))
+        .await
+        .unwrap();
+    for i in 1..=10 {
+        publish(&ch, "", "batched", &format!("m{i}")).await;
+    }
+
+    let mut raw = Raw::connect(addr).await;
+    raw.send(1, ChannelOpen::default()).await;
+    raw.expect(1, "channel.open-ok").await;
+    raw.send(
+        1,
+        BasicConsume {
+            queue: "batched".into(),
+            consumer_tag: "c".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    raw.expect(1, "basic.consume-ok").await;
+    for _ in 1..=10 {
+        raw.expect(1, "basic.deliver").await;
+    }
+
+    // Acks for 1-8, a requeueing nack for 10, then a close that requeues 9: one write.
+    let mut out = bytes::BytesMut::new();
+    for tag in 1..=8 {
+        let ack = BasicAck {
+            delivery_tag: tag,
+            multiple: false,
+        };
+        firemq_amqp_codec::encode_method(&mut out, 1, &ack.into());
+    }
+    let nack = BasicNack {
+        delivery_tag: 10,
+        multiple: false,
+        requeue: true,
+    };
+    firemq_amqp_codec::encode_method(&mut out, 1, &nack.into());
+    let close = ChannelClose {
+        reply_code: 200,
+        reply_text: "bye".into(),
+        ..Default::default()
+    };
+    firemq_amqp_codec::encode_method(&mut out, 1, &close.into());
+    raw.send_bytes(out).await;
+    raw.expect(1, "channel.close-ok").await;
+
+    let mut ready = 0;
+    for _ in 0..50 {
+        let (_, n, _) = ch
+            .queue_declare(QueueDeclareArguments::new("batched").passive(true).finish())
+            .await
+            .unwrap()
+            .unwrap();
+        ready = n;
+        if ready == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        ready, 2,
+        "only messages 9 and 10 should be back in the queue"
+    );
+}
