@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-08)
 
 The first release: a single-node, durable message broker that speaks AMQP 0-9-1 and the FireMQ protocol.
 
@@ -21,6 +21,7 @@ The first release: a single-node, durable message broker that speaks AMQP 0-9-1 
 - A conformance suite of 19 scenarios that every SDK runs against a real broker.
 - The Rust SDK, `firemq-client`. It reconnects on its own and restores the topology and subscriptions it declared.
 - SDKs for Go, TypeScript, Java and Kotlin, .NET, Elixir and PHP in their own repositories.
+- Bindings over the Rust SDK for Python, Ruby, Swift, Dart and C, with prebuilt native libraries: Python wheels, Ruby gems per platform, an XCFramework for macOS and iOS, and C library archives for Linux, macOS and Windows. A Kotlin binding for Android builds from source.
 
 ### Operations and developer experience
 

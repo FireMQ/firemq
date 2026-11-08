@@ -26,17 +26,37 @@ The image is built `FROM scratch` and contains only the static binary. Data is s
 
 A Compose file is in [`deploy/docker-compose.yml`](https://github.com/FireMQ/firemq/blob/main/deploy/docker-compose.yml).
 
+## Homebrew (macOS and Linux)
+
+```bash
+brew install firemq/tap/firemq
+```
+
+To start it at login, with data in Homebrew's `var/firemq` directory, run `brew services start firemq`.
+
+## GitHub Actions
+
+[`FireMQ/setup-firemq`](https://github.com/FireMQ/setup-firemq) starts a broker for the rest of a job, on Linux, macOS and Windows runners:
+
+```yaml
+steps:
+  - uses: FireMQ/setup-firemq@v1
+  - run: npm test   # connect to amqp://guest:guest@localhost:5672
+```
+
 ## Release archives
 
 Download an archive for Linux (static, x86_64 or arm64), macOS (Apple silicon or Intel) or Windows from the [releases page](https://github.com/FireMQ/firemq/releases), unpack it, and put `firemq` on your `PATH`.
 
-## From source
+## With Cargo
 
 You need Rust 1.89 or later.
 
 ```bash
-cargo install --git https://github.com/FireMQ/firemq firemq
+cargo install firemq
 ```
+
+To build the latest code on `main` instead, run `cargo install --git https://github.com/FireMQ/firemq firemq`.
 
 ## Run as a service on Linux
 
