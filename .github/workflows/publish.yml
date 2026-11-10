@@ -348,7 +348,31 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
-      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      # Exchanges this job's GitHub OIDC token for a RubyGems API key that lasts 15 minutes,
+      # as rubygems/configure-rubygems-credentials does. A pending trusted publisher accepts
+      # the first push of a new gem only when the exchange names the account that owns it,
+      # and that action can't pass an owner yet, so this step calls the API itself. For the
+      # first release, set the repository variable RUBYGEMS_OWNER to that account's ID.
+      - name: Get a RubyGems API key for this workflow
+        env:
+          OWNER: ${{ vars.RUBYGEMS_OWNER }}
+        run: |
+          jwt=$(curl -sS --fail-with-body \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rubygems.org" | jq -r .value)
+          echo "::add-mask::$jwt"
+          body=$(jq -n --arg jwt "$jwt" --arg owner "$OWNER" \
+            '{jwt: $jwt} + (if $owner == "" then {} else {owner: $owner} end)')
+          key=$(curl -sS --fail-with-body -X POST \
+            -H 'content-type: application/json' -H 'accept: application/json' \
+            -d "$body" https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token |
+            jq -r '.rubygems_api_key // empty')
+          if [ -z "$key" ]; then
+            echo "::error::RubyGems did not return an API key"
+            exit 1
+          fi
+          echo "::add-mask::$key"
+          echo "GEM_HOST_API_KEY=$key" >> "$GITHUB_ENV"
       - name: Push the gems that are not on RubyGems yet
         run: |
           for gem in gems/*.gem; do

@@ -50,7 +50,7 @@ on the registry:
 |---|---|
 | crates.io | Create an API token with the `publish-new` and `publish-update` scopes and store it as the repository secret `CARGO_REGISTRY_TOKEN`. |
 | PyPI | Add a trusted publisher (a pending one before the first release) for project `firemq`: owner `FireMQ`, repository `firemq`, workflow `publish.yml`, environment `pypi`. Then set the repository variable `PYPI_TRUSTED_PUBLISHER` to `true`. |
-| RubyGems | Add a trusted publisher (a pending one before the first release) for gem `firemq` with the same repository, workflow `publish.yml` and environment `rubygems`. Then set the repository variable `RUBYGEMS_TRUSTED_PUBLISHER` to `true`. |
+| RubyGems | Add a trusted publisher (a pending one before the first release) for gem `firemq` with the same repository, workflow `publish.yml` and environment `rubygems`. Then set the repository variable `RUBYGEMS_TRUSTED_PUBLISHER` to `true`. A pending publisher also needs the repository variable `RUBYGEMS_OWNER` set to the numeric account ID that its page shows, because RubyGems rejects the first push of a new gem that doesn't name its owner. |
 | pub.dev | The first version is published by hand with `dart pub publish`. |
 | GitHub Container Registry | Nothing; the workflow uses `GITHUB_TOKEN`. |
 
